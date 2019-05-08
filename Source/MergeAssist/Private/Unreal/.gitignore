@@ -1,0 +1,3 @@
+# The files in this directory are unreal engine source code. Make sure we never submit this to the git repo, users will have to manually copy these files instead
+*
+!.gitignore
