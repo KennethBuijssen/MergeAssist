@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "",
+	"FriendlyName": "MergeAssist",
+	"Description": "A plugin which provides additional functionality to help merge blueprints",
+	"Category": "Other",
+	"CreatedBy": "Kenneth Buijssen",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "MergeAssist",
+			"Type": "Developer",
+			"LoadingPhase": "Default"
+		}
+	]
+}
