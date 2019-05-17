@@ -7,6 +7,7 @@
 #include "DeclarativeSyntaxSupport.h"
 #include "BlueprintMergeData.h"
 #include "SBlueprintDiff.h"
+#include "FDiffHelper.h"
 
 
 class FSpawnTabArgs;
@@ -81,4 +82,10 @@ private:
 	TArray<FDiffPanel> DiffPanels;
 
 	TSharedPtr<MergeGraphChange> SelectedChange;
+
+	// @TODO: Remove this temp code
+	TArray<TSharedPtr<FMergeDiffResult>> MergeDiffResults;
+	TSharedPtr<SListView<TSharedPtr<FMergeDiffResult>>> MergeDiffList;
+	void MergeDiffListWidgetOnSelectionChanged(TSharedPtr<FMergeDiffResult> SelectedItem, 
+	ESelectInfo::Type SelectInfo, TSharedPtr<SBox> DetailContainer);
 };
