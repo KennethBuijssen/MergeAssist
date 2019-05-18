@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "FDiffHelper.h"
+#include "GraphDiffControl.h"
+#include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 
@@ -12,24 +14,104 @@ static void DiffR_NodeAdded(FMergeDiffResults& Results, UEdGraphNode* NodeAdded)
 static void DiffR_PinRemoved(FMergeDiffResults& Results, UEdGraphPin* OldPin);
 static void DiffR_PinAdded(FMergeDiffResults& Results, UEdGraphPin* NewPin);
 
-static void DiffR_LinkRemoved(FMergeDiffResults& Results, const LinkMatch& LinkMatch);
-static void DiffR_LinkAdded(FMergeDiffResults& Results, const LinkMatch& LinkMatch);
+static void DiffR_LinkRemoved(FMergeDiffResults& Results, const FLinkMatch& LinkMatch);
+static void DiffR_LinkAdded(FMergeDiffResults& Results, const FLinkMatch& LinkMatch);
 
 static void DiffR_PinDefaultChanged(FMergeDiffResults& Results, UEdGraphPin* OldPin, UEdGraphPin* NewPin);
 
 static void DiffR_NodeMoved(FMergeDiffResults& Results, UEdGraphNode* OldNode, UEdGraphNode* NewNode);
 static void DiffR_NodeCommentChanged(FMergeDiffResults& Results, UEdGraphNode* OldNode, UEdGraphNode* NewNode);
 
-static TArray<PinMatch> GeneratePinMatches(UEdGraphNode* OldNode, UEdGraphNode* NewNode);
-static TArray<LinkMatch> GenerateLinkMatches(UEdGraphPin* OldPin, UEdGraphPin* NewPin);
+template<class MatchType, class ItemType, typename Predicate>
+TArray<MatchType> FindItemMatchesByPredicate(
+	TArray<ItemType>& OutUnmatchedOldItems,
+	TArray<ItemType>& OutUnmatchedNewItems,
+	Predicate Pred)
+{
+	TArray<MatchType> ItemMatches;
+
+	// Go trough all the items in the old items, and try 
+	// to match them with an item from the new items
+	for (int32 i = 0; i < OutUnmatchedOldItems.Num(); ++i)
+	{
+		ItemType OldItem = OutUnmatchedOldItems[i];
+		ItemType* FoundItem = OutUnmatchedNewItems.FindByPredicate([Pred, OldItem](ItemType NewItem)
+		{
+			return Pred(OldItem, NewItem);
+		});
+
+		if (FoundItem)
+		{
+			MatchType Match = { OldItem, *FoundItem };
+			ItemMatches.Add(Match);
+
+			// Since we matched some items they should no longer be in 
+			// the unmatched item lists
+			OutUnmatchedOldItems.RemoveSingle(OldItem);
+			OutUnmatchedNewItems.RemoveSingle(*FoundItem);
+
+			// Since we just removed the current element in the loop
+			// we need to decrement the counter by one. This ensures 
+			// that the next element remains consistent
+			--i;
+
+			continue;
+		}
+	}
+
+	return ItemMatches;
+}
+
+void FDiffHelper::DiffGraphs(
+	UEdGraph* OldGraph, 
+	UEdGraph* NewGraph,
+	FMergeDiffResults& DiffsOut,
+	ENodeMatchStrategy MatchStrategy,
+	TArray<FNodeMatch>* NodeMatchesOut,
+	TArray<UEdGraphNode*>* UnmatchedOldNodesOut,
+	TArray<UEdGraphNode*>* UnmatchedNewNodesOut)
+{
+	// Ensure that both graphs exist
+	if (!OldGraph || !NewGraph) return;
+	
+	// To start, we mark all nodes at unmatched
+	TArray<UEdGraphNode*> UnmatchedOldNodes;
+	TArray<UEdGraphNode*> UnmatchedNewNodes;
+
+	TArray<FNodeMatch> NodeMatches = FindNodeMatches(
+		OldGraph, NewGraph, MatchStrategy,
+		&UnmatchedOldNodes, &UnmatchedNewNodes
+	);
+
+	// Diff all the matched nodes
+	for (auto Match : NodeMatches)
+	{
+		DiffNodes(Match.OldNode, Match.NewNode, DiffsOut);
+	}
+
+	// We also need to diff all the unmatched nodes
+	// this is to generate NODE_ADDED and NODE_REMOVED diffs	
+	for (auto* UnmatchedOldNode : UnmatchedOldNodes)
+	{
+		DiffNodes(UnmatchedOldNode, nullptr, DiffsOut);	
+	}
+
+	for (auto* UnmatchedNewNode : UnmatchedNewNodes)
+	{
+		DiffNodes(nullptr, UnmatchedNewNode, DiffsOut);
+	}
+
+	// Output the output values if they are requested
+	if (NodeMatchesOut)       *NodeMatchesOut       = NodeMatches;
+	if (UnmatchedOldNodesOut) *UnmatchedOldNodesOut = UnmatchedOldNodes;
+	if (UnmatchedNewNodesOut) *UnmatchedNewNodesOut = UnmatchedNewNodes;
+}
 
 void FDiffHelper::DiffNodes(
 	UEdGraphNode* OldNode, 
 	UEdGraphNode* NewNode, 
 	FMergeDiffResults& DiffsOut)
 {
-	using EDiffFlags = FGraphDiffControl::EDiffFlags;
-
 	// Ensure that at least one of the nodes is passed in
 	if (!OldNode && !NewNode) return;
 
@@ -56,7 +138,26 @@ void FDiffHelper::DiffNodes(
 	}
 
 	{
-		TArray<PinMatch> PinMatches = GeneratePinMatches(OldNode, NewNode);
+		TArray<UEdGraphPin*> UnmatchedOldPins;
+		TArray<UEdGraphPin*> UnmatchedNewPins;
+		TArray<FPinMatch> PinMatches = FindPinMatches(OldNode, NewNode, &UnmatchedOldPins, &UnmatchedNewPins);
+
+		// Generate invalid pin matches for all the unmatched pins
+		// this is to generate PIN_ADDED and PIN_REMOVED diffs	
+		for (auto UnmatchedOldPin : UnmatchedOldPins)
+		{
+			FPinMatch InvalidMatch = {};
+			InvalidMatch.OldPin = UnmatchedOldPin;
+			PinMatches.Add(InvalidMatch);
+		}
+
+		for (auto UnmatchedNewPin : UnmatchedNewPins)
+		{
+			FPinMatch InvalidMatch = {};
+			InvalidMatch.NewPin = UnmatchedNewPin;
+			PinMatches.Add(InvalidMatch);
+		}
+
 		for (auto PinMatch : PinMatches)
 		{
 			DiffPins(PinMatch.OldPin, PinMatch.NewPin, DiffsOut);
@@ -81,7 +182,6 @@ void FDiffHelper::DiffPins(
 {
 	// Ensure that at least one pin is passed in
 	if (!OldPin && !NewPin) return;
-	const auto InitialDiffCount = DiffsOut.Num();
 
 	if (NewPin == nullptr)
 	{
@@ -110,39 +210,308 @@ void FDiffHelper::DiffPins(
 	}
 
 	{
-		TArray<LinkMatch> LinkMatches = GenerateLinkMatches(OldPin, NewPin);
+		TArray<FGraphLink> UnmatchedOldLinks;
+		TArray<FGraphLink> UnmatchedNewLinks;
+		TArray<FLinkMatch> LinkMatches = FindLinkMatches(OldPin, NewPin, &UnmatchedOldLinks, &UnmatchedNewLinks);
+		
+		// Generate invalid link matches for all the unmatched pins
+		// this is to generate PIN_ADDED and PIN_REMOVED diffs	
+		for (auto UnmatchedOldLink : UnmatchedOldLinks)
+		{
+			FLinkMatch InvalidMatch = {};
+			InvalidMatch.OldLink = UnmatchedOldLink;
+			InvalidMatch.NewLink.SourcePin = NewPin;
+			LinkMatches.Add(InvalidMatch);
+		}
+
+		for (auto UnmatchedNewLink : UnmatchedNewLinks)
+		{
+			FLinkMatch InvalidMatch = {};
+			InvalidMatch.OldLink.SourcePin = OldPin;
+			InvalidMatch.NewLink = UnmatchedNewLink;
+			LinkMatches.Add(InvalidMatch);
+		}
+		
 		for (auto LinkMatch : LinkMatches)
 		{
-			DiffLink(LinkMatch, DiffsOut);
+			DiffLinks(LinkMatch.OldLink, LinkMatch.NewLink, DiffsOut);
 		}
 	}
 }
 
-void FDiffHelper::DiffLink(
-	LinkMatch LinkMatch, 
+void FDiffHelper::DiffLinks(
+	const FGraphLink& OldLink,
+	const FGraphLink& NewLink, 
 	FMergeDiffResults& DiffsOut)
 {
 	// ensure that at least one target got passed in
-	if (!LinkMatch.OldLinkTarget && !LinkMatch.NewLinkTarget) return;
-	const auto InitialDiffCount = DiffsOut.Num();
+	if (!OldLink.TargetPin && !NewLink.TargetPin) return;
 
-	if (LinkMatch.NewLinkTarget == nullptr)
+	if (NewLink.TargetPin == nullptr)
 	{
-		DiffR_LinkRemoved(DiffsOut, LinkMatch);
+		DiffR_LinkRemoved(DiffsOut, FLinkMatch{OldLink, NewLink});
 		return;
 	}
 
-	if (LinkMatch.OldLinkTarget == nullptr)
+	if (OldLink.TargetPin == nullptr)
 	{
-		DiffR_LinkAdded(DiffsOut, LinkMatch);
+		DiffR_LinkAdded(DiffsOut, FLinkMatch{OldLink, NewLink});
 		return;
 	}
 }
 
-bool FDiffHelper::BetterNodeMatch(UEdGraphNode* OldNode, UEdGraphNode* NewNode)
+bool FDiffHelper::IsExactNodeMatch(const UEdGraphNode* OldNode, const UEdGraphNode* NewNode)
 {
-	// @TODO: Actually implement this
-	return FGraphDiffControl::IsNodeMatch(OldNode, NewNode);
+	// Nodes with different classes (types) can never be a match
+	if (OldNode->GetClass() != NewNode->GetClass()) return false;
+
+	// nodes with the same GUID are a match
+	if (NewNode->NodeGuid == OldNode->NodeGuid) return true;
+
+	// we could be diffing two completely separate assets, this makes sure both 
+	// nodes historically belong to the same graph
+	const bool bIsIntraAssetDiff = (NewNode->GetGraph()->GraphGuid == OldNode->GetGraph()->GraphGuid);
+
+	// If both nodes belong to the same graph, and have the same FName we know 
+	// that they are the same node 
+	return bIsIntraAssetDiff && NewNode->GetFName() == OldNode->GetFName();
+}
+
+TArray<FNodeMatch> FDiffHelper::FindNodeMatches(
+		UEdGraph* OldGraph,
+		UEdGraph* NewGraph,
+		ENodeMatchStrategy MatchStrategy,
+		TArray<UEdGraphNode*>* OutUnmatchedOldNodes,
+		TArray<UEdGraphNode*>* OutUnmatchedNewNodes)
+{
+	TArray<UEdGraphNode*> UnmatchedOldNodes = OldGraph->Nodes;
+	TArray<UEdGraphNode*> UnmatchedNewNodes = NewGraph->Nodes;
+
+	TArray<FNodeMatch> NodeMatches;
+
+	// Call the different match algorithms based on the strategy
+	if (IsFlagSet(MatchStrategy, ENodeMatchStrategy::EXACT))
+	{
+		NodeMatches.Append(FindExactNodeMatches(UnmatchedOldNodes, UnmatchedNewNodes));
+	}
+
+	if (IsFlagSet(MatchStrategy, ENodeMatchStrategy::APPROXIMATE))
+	{
+		NodeMatches.Append(FindApproximateNodeMatches(UnmatchedOldNodes, UnmatchedNewNodes));
+	}
+
+	// Output the output values if they are requested
+	if (OutUnmatchedOldNodes) *OutUnmatchedOldNodes = UnmatchedOldNodes;
+	if (OutUnmatchedNewNodes) *OutUnmatchedNewNodes = UnmatchedNewNodes;
+	
+	return NodeMatches;
+}
+
+TArray<FPinMatch> FDiffHelper::FindPinMatches(
+		UEdGraphNode* OldNode,
+		UEdGraphNode* NewNode,
+		TArray<UEdGraphPin*>* OutUnmatchedOldPins,
+		TArray<UEdGraphPin*>* OutUnmatchedNewPins)
+{
+	const auto IsVisiblePredicate = [](UEdGraphPin* Pin)
+	{
+		return Pin && !Pin->bHidden;
+	}; 
+	
+	// Gather all the visible pins
+	auto UnmatchedOldPins = OldNode->Pins.FilterByPredicate(IsVisiblePredicate);
+	auto UnmatchedNewPins = NewNode->Pins.FilterByPredicate(IsVisiblePredicate);
+
+	auto PinMatches = FindItemMatchesByPredicate<FPinMatch>(UnmatchedOldPins, UnmatchedNewPins, 
+		[](	UEdGraphPin* OldPin, UEdGraphPin* NewPin)
+		{
+			return OldPin && NewPin && OldPin->PinName == NewPin->PinName;
+		});
+	
+	// Output the output values if they are requested
+	if (OutUnmatchedOldPins) *OutUnmatchedOldPins = UnmatchedOldPins;
+	if (OutUnmatchedNewPins) *OutUnmatchedNewPins = UnmatchedNewPins;
+
+	return PinMatches;
+}
+
+TArray<FLinkMatch> FDiffHelper::FindLinkMatches(
+		UEdGraphPin* OldPin,
+		UEdGraphPin* NewPin,
+		TArray<FGraphLink>* OutUnmatchedOldLinks,
+		TArray<FGraphLink>* OutUnmatchedNewLinks)
+{
+	const auto GetAllGraphLinks = [](UEdGraphPin* Pin)
+	{
+		TArray<FGraphLink> Ret;
+		for (auto* Target : Pin->LinkedTo)
+		{
+			Ret.Add(FGraphLink{Pin, Target});
+		}
+		return Ret;
+	};
+
+	auto UnmatchedOldLinks = GetAllGraphLinks(OldPin);
+	auto UnmatchedNewLinks = GetAllGraphLinks(NewPin);
+
+	auto LinkMatches = FindItemMatchesByPredicate<FLinkMatch>(UnmatchedOldLinks, UnmatchedNewLinks,
+		[](const FGraphLink& OldLink, const FGraphLink& NewLink)
+		{
+			// If the target have the same name, direction, and owner
+			// then we are convinced they are the same target
+			return OldLink.TargetPin->Direction == NewLink.TargetPin->Direction
+				&& OldLink.TargetPin->PinName == NewLink.TargetPin->PinName
+				&& WeakNodeMatch(OldLink.TargetPin->GetOwningNode(), NewLink.TargetPin->GetOwningNode());
+		});
+
+	// Output the output values if they are requested
+	if (OutUnmatchedOldLinks) *OutUnmatchedOldLinks = UnmatchedOldLinks;
+	if (OutUnmatchedNewLinks) *OutUnmatchedNewLinks = UnmatchedNewLinks;
+
+	return LinkMatches;
+}
+
+TArray<FNodeMatch> FDiffHelper::FindExactNodeMatches(TArray<UEdGraphNode*>& UnmatchedOldNodes, TArray<UEdGraphNode*>& UnmatchedNewNodes)
+{
+	return FindItemMatchesByPredicate<FNodeMatch>(UnmatchedOldNodes, UnmatchedNewNodes, 
+		[](	UEdGraphNode* OldNode, UEdGraphNode* NewNode)
+		{
+			return OldNode && NewNode && IsExactNodeMatch(OldNode, NewNode);
+		});
+}
+
+TArray<FNodeMatch> FDiffHelper::FindApproximateNodeMatches(TArray<UEdGraphNode*>& UnmatchedOldNodes, TArray<UEdGraphNode*>& UnmatchedNewNodes)
+{
+	const auto CompareNodeType = [](UEdGraphNode& NodeA, UEdGraphNode& NodeB)
+	{
+		const auto TitleA = NodeA.GetNodeTitle(ENodeTitleType::FullTitle);
+		const auto TitleB = NodeB.GetNodeTitle(ENodeTitleType::FullTitle);
+
+		return NodeA.GetClass() != NodeB.GetClass()
+			? NodeA.GetClass() < NodeB.GetClass()
+			: TitleA.CompareTo(TitleB) < 0;
+	};
+
+	// We presort all the unmatched nodes, so we can efficiently process them by type
+	Sort(UnmatchedOldNodes.GetData(), UnmatchedOldNodes.Num(), CompareNodeType);
+	Sort(UnmatchedNewNodes.GetData(), UnmatchedNewNodes.Num(), CompareNodeType);
+
+	TArray<FNodeMatch> Matches;
+
+	int32 TypeIndicatorOffset = 0;
+	while (TypeIndicatorOffset < UnmatchedOldNodes.Num())
+	{
+		// We pick a node from the old nodes to use as our type indicator
+		auto* NodeType = UnmatchedOldNodes[TypeIndicatorOffset];
+
+		const auto IsSameNodeType = [NodeType](UEdGraphNode* Node)
+		{
+			const auto TitleA = NodeType->GetNodeTitle(ENodeTitleType::FullTitle);
+			const auto TitleB = Node->GetNodeTitle(ENodeTitleType::FullTitle);
+
+			return NodeType->GetClass() == Node->GetClass() && TitleA.EqualTo(TitleB);
+		};
+
+		// Determine the range of old nodes we are looking at since the type was 
+		// sourced from this array, we know we have at least 1 node of this type
+		const auto IndexOldNodesFirst = UnmatchedOldNodes.IndexOfByPredicate(IsSameNodeType);
+		const auto IndexOldNodesLast = UnmatchedOldNodes.FindLastByPredicate(IsSameNodeType);		
+		const auto NumOldNodes = 1 + (IndexOldNodesLast - IndexOldNodesFirst); 
+
+		const auto IndexNewNodesFirst = UnmatchedNewNodes.IndexOfByPredicate(IsSameNodeType);
+		const auto IndexNewNodesLast = UnmatchedNewNodes.FindLastByPredicate(IsSameNodeType);		
+		const auto NumNewNodes = 1 + (IndexNewNodesLast - IndexNewNodesFirst); 
+
+		// We always need to increment our type indicator offset
+		TypeIndicatorOffset += NumOldNodes;
+
+		// We only need to check if the values for the new nodes are valid
+		// since it's guaranteed that the values for the old nodes are
+		if (IndexNewNodesFirst == INDEX_NONE || IndexNewNodesLast == INDEX_NONE) continue;
+
+		auto OldNodesView = TArrayView<UEdGraphNode*>(&UnmatchedOldNodes[IndexOldNodesFirst], NumOldNodes);
+		auto NewNodesView = TArrayView<UEdGraphNode*>(&UnmatchedNewNodes[IndexNewNodesFirst], NumNewNodes);
+
+		auto SubMatches = FindApproximateNodeMatchesBetweenNodesOfTheSameType(OldNodesView, NewNodesView);
+		Matches.Append(SubMatches);		
+	}
+
+	// Remove all nodes we managed to match from the unmatched nodes
+	for (auto Match : Matches)
+	{
+		UnmatchedOldNodes.Remove(Match.OldNode);
+		UnmatchedNewNodes.Remove(Match.NewNode);
+	}
+	
+	return Matches;
+}
+
+TArray<FNodeMatch> FDiffHelper::FindApproximateNodeMatchesBetweenNodesOfTheSameType(
+	const TArrayView<UEdGraphNode*>& UnmatchedOldNodesOfType, 
+	const TArrayView<UEdGraphNode*>& UnmatchedNewNodesOfType)
+{
+	struct PotentialNodeMatch
+	{
+		UEdGraphNode* OldNode;
+		UEdGraphNode* NewNode;
+		int32 DiffCount;
+	};
+
+	// Generate all potential matches, and assign them a weight based on the number of diffs
+	TArray<PotentialNodeMatch> PotentialMatches;
+	for (auto OldNode : UnmatchedOldNodesOfType)
+	{
+		for (auto NewNode : UnmatchedNewNodesOfType)
+		{
+			FMergeDiffResults Results = FMergeDiffResults();
+			DiffNodes(OldNode, NewNode, Results);
+
+			PotentialMatches.Add(
+				PotentialNodeMatch
+				{
+					OldNode, NewNode, Results.NumFound()
+				}
+			);
+		}
+	}
+
+	// Sort the potential matches based on the lowest DiffCount, this ensures 
+	// that when looping, the first match we encounter is the best match
+	PotentialMatches.Sort([](const PotentialNodeMatch& MatchA, const PotentialNodeMatch& MatchB)
+	{
+		return MatchA.DiffCount < MatchB.DiffCount;
+	});
+
+	// Try and find the best matches
+	TArray<FNodeMatch> NodeMatches;
+	while(PotentialMatches.Num())
+	{
+		auto& BestMatch = PotentialMatches[0];
+
+		FNodeMatch Match = {};
+		Match.OldNode = BestMatch.OldNode;
+		Match.NewNode = BestMatch.NewNode;
+		NodeMatches.Add(Match);
+
+		// Remove all matches which have overlap with our best match
+		PotentialMatches.RemoveAll([BestMatch](PotentialNodeMatch& PotentialMatch)
+		{
+			return BestMatch.OldNode == PotentialMatch.OldNode
+				|| BestMatch.NewNode == PotentialMatch.NewNode;
+		});
+	}
+
+	return NodeMatches;
+}
+
+bool FDiffHelper::WeakNodeMatch(UEdGraphNode* OldNode, UEdGraphNode* NewNode)
+{
+	if (IsExactNodeMatch(OldNode, NewNode)) return true;
+
+	const auto TitleA = OldNode->GetNodeTitle(ENodeTitleType::FullTitle);
+	const auto TitleB = NewNode->GetNodeTitle(ENodeTitleType::FullTitle);
+
+	return OldNode->GetClass() == NewNode->GetClass() && TitleA.EqualTo(TitleB);
 }
 
 /*******************************************************************************
@@ -152,7 +521,7 @@ bool FDiffHelper::BetterNodeMatch(UEdGraphNode* OldNode, UEdGraphNode* NewNode)
 void DiffR_NodeRemoved(FMergeDiffResults& Results, UEdGraphNode* NodeRemoved)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type    = MergeDiffType::NODE_REMOVED;
+	Diff.Type    = EMergeDiffType::NODE_REMOVED;
 	Diff.NodeOld = NodeRemoved;
 	
 	// Only generate the display data if it will be stored
@@ -171,7 +540,7 @@ void DiffR_NodeAdded(FMergeDiffResults& Results, UEdGraphNode* NodeAdded)
 {
 	// @TODO: Implement
 	FMergeDiffResult Diff = {};
-	Diff.Type    = MergeDiffType::NODE_ADDED;
+	Diff.Type    = EMergeDiffType::NODE_ADDED;
 	Diff.NodeNew = NodeAdded;
 	
 	// Only generate the display data if it will be stored
@@ -189,7 +558,7 @@ void DiffR_NodeAdded(FMergeDiffResults& Results, UEdGraphNode* NodeAdded)
 void DiffR_PinRemoved(FMergeDiffResults& Results, UEdGraphPin* OldPin)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type   = MergeDiffType::PIN_REMOVED;
+	Diff.Type   = EMergeDiffType::PIN_REMOVED;
 	Diff.PinOld = OldPin;
 
 	// Only generate the display data if it will be stored
@@ -207,7 +576,7 @@ void DiffR_PinRemoved(FMergeDiffResults& Results, UEdGraphPin* OldPin)
 void DiffR_PinAdded(FMergeDiffResults& Results, UEdGraphPin* NewPin)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type   = MergeDiffType::PIN_ADDED;
+	Diff.Type   = EMergeDiffType::PIN_ADDED;
 	Diff.PinNew = NewPin;
 
 	// Only generate the display data if it will be stored
@@ -222,14 +591,14 @@ void DiffR_PinAdded(FMergeDiffResults& Results, UEdGraphPin* NewPin)
 	Results.Add(Diff);
 }
 
-void DiffR_LinkRemoved(FMergeDiffResults& Results, const LinkMatch& LinkMatch)
+void DiffR_LinkRemoved(FMergeDiffResults& Results, const FLinkMatch& LinkMatch)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type          = MergeDiffType::LINK_REMOVED;
-	Diff.PinOld        = LinkMatch.OldLinkSource;
-	Diff.PinNew        = LinkMatch.NewLinkSource;
-	Diff.LinkTargetOld = LinkMatch.OldLinkTarget;
-	Diff.LinkTargetNew = LinkMatch.NewLinkTarget;
+	Diff.Type          = EMergeDiffType::LINK_REMOVED;
+	Diff.PinOld        = LinkMatch.OldLink.SourcePin;
+	Diff.PinNew        = LinkMatch.NewLink.SourcePin;
+	Diff.LinkTargetOld = LinkMatch.OldLink.TargetPin;
+	Diff.LinkTargetNew = LinkMatch.NewLink.TargetPin;
 
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
@@ -243,14 +612,14 @@ void DiffR_LinkRemoved(FMergeDiffResults& Results, const LinkMatch& LinkMatch)
 	Results.Add(Diff);
 }
 
-void DiffR_LinkAdded(FMergeDiffResults& Results, const LinkMatch& LinkMatch)
+void DiffR_LinkAdded(FMergeDiffResults& Results, const FLinkMatch& LinkMatch)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type          = MergeDiffType::LINK_ADDED;
-	Diff.PinOld        = LinkMatch.OldLinkSource;
-	Diff.PinNew        = LinkMatch.NewLinkSource;
-	Diff.LinkTargetOld = LinkMatch.OldLinkTarget;
-	Diff.LinkTargetNew = LinkMatch.NewLinkTarget;
+	Diff.Type          = EMergeDiffType::LINK_ADDED;
+	Diff.PinOld        = LinkMatch.OldLink.SourcePin;
+	Diff.PinNew        = LinkMatch.NewLink.SourcePin;
+	Diff.LinkTargetOld = LinkMatch.OldLink.TargetPin;
+	Diff.LinkTargetNew = LinkMatch.NewLink.TargetPin;
 
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
@@ -267,7 +636,7 @@ void DiffR_LinkAdded(FMergeDiffResults& Results, const LinkMatch& LinkMatch)
 void DiffR_PinDefaultChanged(FMergeDiffResults& Results, UEdGraphPin* OldPin, UEdGraphPin* NewPin)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type          = MergeDiffType::PIN_DEFAULT_VALUE_CHANGED;
+	Diff.Type          = EMergeDiffType::PIN_DEFAULT_VALUE_CHANGED;
 	Diff.PinOld        = OldPin;
 	Diff.PinNew        = NewPin;
 
@@ -286,7 +655,7 @@ void DiffR_PinDefaultChanged(FMergeDiffResults& Results, UEdGraphPin* OldPin, UE
 void DiffR_NodeMoved(FMergeDiffResults& Results, UEdGraphNode* OldNode, UEdGraphNode* NewNode)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type    = MergeDiffType::NODE_MOVED;
+	Diff.Type    = EMergeDiffType::NODE_MOVED;
 	Diff.NodeOld = OldNode;
 	Diff.NodeNew = NewNode;
 
@@ -305,7 +674,7 @@ void DiffR_NodeMoved(FMergeDiffResults& Results, UEdGraphNode* OldNode, UEdGraph
 void DiffR_NodeCommentChanged(FMergeDiffResults& Results, UEdGraphNode* OldNode, UEdGraphNode* NewNode)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type    = MergeDiffType::NODE_COMMENT_CHANGED;
+	Diff.Type    = EMergeDiffType::NODE_COMMENT_CHANGED;
 	Diff.NodeOld = OldNode;
 	Diff.NodeNew = NewNode;
 
@@ -319,107 +688,6 @@ void DiffR_NodeCommentChanged(FMergeDiffResults& Results, UEdGraphNode* OldNode,
 	}
 
 	Results.Add(Diff);
-}
-
-TArray<PinMatch> GeneratePinMatches(UEdGraphNode* OldNode, UEdGraphNode* NewNode)
-{
-	const auto IsVisiblePredicate = [](UEdGraphPin* Pin)
-	{
-		return Pin && !Pin->bHidden;
-	}; 
-
-	// Gather all the visible pins
-	auto OldPins = OldNode->Pins.FilterByPredicate(IsVisiblePredicate);
-	auto NewPins = NewNode->Pins.FilterByPredicate(IsVisiblePredicate);
-
-	// We try and create matching pairs for the pins based on their names
-	// if we cannot find a pin with the same name we assume
-	// that the pin was either added or removed, this is indicated 
-	// by leaving the other pin set to a nullptr
-	TArray<PinMatch> PinMatches;
-	for (auto OldPin : OldPins)
-	{
-		PinMatch Match = {};
-		Match.OldPin = OldPin;
-
-		UEdGraphPin** FoundPin = NewPins.FindByPredicate([OldPin](UEdGraphPin* NewPin)
-		{
-			return OldPin->PinName == NewPin->PinName;
-		});
-
-		if (FoundPin)
-		{
-			Match.NewPin = *FoundPin;
-
-			// We remove the matched pin from the list of new pins 
-			// to ensure we never match the same pin twice
-			NewPins.Remove(Match.NewPin);
-		}
-
-		PinMatches.Add(Match);
-	}
-
-	// Add all leftover pins in the new node
-	for (auto NewPin : NewPins)
-	{
-		PinMatch Match = {};
-		Match.NewPin = NewPin;
-		PinMatches.Add(Match);
-	}
-
-	return PinMatches;
-}
-
-TArray<LinkMatch> GenerateLinkMatches(UEdGraphPin* OldPin, UEdGraphPin* NewPin)
-{
-	auto OldLinkTargets = OldPin->LinkedTo;
-	auto NewLinkTargets = NewPin->LinkedTo;
-
-	// We try and create matching pairs of the links
-	TArray<LinkMatch> LinkMatches;
-	for (auto OldLinkTarget : OldLinkTargets)
-	{
-		LinkMatch Match = {};
-		Match.OldLinkSource = OldPin;
-		Match.OldLinkTarget = OldLinkTarget;
-		Match.NewLinkSource = NewPin;
-
-		// Try and find the matching pin
-		UEdGraphPin** FoundPin = NewLinkTargets.FindByPredicate([OldLinkTarget](UEdGraphPin* NewLinkTarget)
-		{
-			// If the target have the same name, direction, and owner
-			// then we are convinced they are the same target
-			return OldLinkTarget->Direction == NewLinkTarget->Direction
-				&& OldLinkTarget->PinName == NewLinkTarget->PinName
-				&& FDiffHelper::BetterNodeMatch(OldLinkTarget->GetOwningNode(), NewLinkTarget->GetOwningNode());
-		});
-
-		if (FoundPin)
-		{
-			Match.NewLinkTarget = *FoundPin;
-
-			// We remove the matched target from the list of new targets
-			// this is to ensure we never match the same target twice
-			NewLinkTargets.Remove(Match.NewLinkTarget);
-		}
-
-		LinkMatches.Add(Match);
-	}
-
-
-	// @TODO: Reconsider if we need this data
-	// Add all the leftover target in the new pin
-	for (auto NewLinkTarget : NewLinkTargets)
-	{
-		LinkMatch Match = {};
-		Match.OldLinkSource = OldPin;
-		Match.NewLinkSource = NewPin;
-		Match.NewLinkTarget = NewLinkTarget;
-
-		LinkMatches.Add(Match);
-	}
-
-	return LinkMatches;
 }
 
 #undef LOCTEXT_NAMESPACE

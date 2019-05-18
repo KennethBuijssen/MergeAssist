@@ -3,36 +3,28 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GraphDiffControl.h"
 
+class UEdGraph;
 class UEdGraphNode;
+class UEdGraphPin;
 
-enum struct MergeDiffType
+// NOTE: Keep this in order of importance, that way we can use it to sort
+// the order in which to display the different diff types to the user
+enum struct EMergeDiffType
 {
-	NO_DIFFERENCE,
-	
+	NO_DIFFERENCE = 0,
 	NODE_REMOVED,
 	NODE_ADDED,
-
 	PIN_REMOVED,
 	PIN_ADDED,
-	
 	LINK_REMOVED,
 	LINK_ADDED,
-	
-	// Current expressed as a pair of LINK_ADDED and LINK_REMOVED
-	// this is done to give higher resolution, since we would need to guess
-	// which of these pairs the user would assume to be the same
-	// /*PIN_*/LINK_CHANGED
-
 	PIN_DEFAULT_VALUE_CHANGED,	
-
 	//PIN_TYPE_CATEGORY,
 	//PIN_TYPE_SUBCATEGORY,
 	//PIN_TYPE_SUBCATEGORY_OBJECT,
 	//PIN_TYPE_IS_ARRAY,
 	//PIN_TYPE_IS_REF,
-
 	NODE_MOVED,
 	NODE_COMMENT_CHANGED,
 
@@ -42,25 +34,62 @@ enum struct MergeDiffType
 	//NODE_PROPERTY -> NODE_INTERNAL_CHANGE
 };
 
-struct PinMatch
+enum struct ENodeMatchStrategy
+{
+	NONE = 0,
+	EXACT = 1 << 0,
+	APPROXIMATE = 1 << 1,
+
+	ALL = -1
+};
+
+static bool IsFlagSet(ENodeMatchStrategy Mask, ENodeMatchStrategy Flag)
+{
+	return static_cast<int>(Mask) & static_cast<int>(Flag);
+}
+
+struct FNodeMatch
+{
+	UEdGraphNode* OldNode;
+	UEdGraphNode* NewNode;
+
+	bool IsValid() const { return OldNode && NewNode; }
+};
+
+struct FPinMatch
 {
 	UEdGraphPin* OldPin;
 	UEdGraphPin* NewPin;
+
+	bool IsValid() const { return OldPin && NewPin; }
 };
 
-struct LinkMatch
+// Link between two pins in a graph
+struct FGraphLink
 {
-	UEdGraphPin* OldLinkSource;
-	UEdGraphPin* OldLinkTarget;
+	UEdGraphPin* SourcePin;
+	UEdGraphPin* TargetPin;
 
-	UEdGraphPin* NewLinkSource;
-	UEdGraphPin* NewLinkTarget;
+	bool IsValid() const { return SourcePin && TargetPin; }
+};
+
+inline bool operator==(const FGraphLink& Lhs, const FGraphLink& Rhs)
+{
+	return Lhs.SourcePin == Rhs.SourcePin && Lhs.TargetPin == Rhs.TargetPin;
+}
+
+struct FLinkMatch
+{
+	FGraphLink OldLink;
+	FGraphLink NewLink;
+
+	bool IsValid() const { return OldLink.IsValid() && NewLink.IsValid(); }
 };
 
 struct FMergeDiffResult
 {
 	// Type of the diff
-	MergeDiffType Type;
+	EMergeDiffType Type;
 
 	// Node data
 	UEdGraphNode* NodeOld;
@@ -85,35 +114,40 @@ class FMergeDiffResults
 public:
 	FMergeDiffResults(TArray<FMergeDiffResult>* ResultsOut = nullptr)
 		: ResultArray(ResultsOut)
-		, bHasFoundDiffs(false) 
+		, NumDiffsFound(0) 
 	{}
 
 	void Add(const FMergeDiffResult& Result)
 	{
-		if (Result.Type == MergeDiffType::NO_DIFFERENCE) return;
+		if (Result.Type == EMergeDiffType::NO_DIFFERENCE) return;
 
-		bHasFoundDiffs = true;
+		NumDiffsFound++;
 
 		if (ResultArray) ResultArray->Add(Result);
 	}
 
 	bool CanStoreResults() const { return ResultArray != nullptr; }
 
-	int32 Num() const { return ResultArray ? ResultArray->Num() : 0; }
-	bool HasFoundDiffs() const { return bHasFoundDiffs; }
+	int32 NumStored() const { return ResultArray ? ResultArray->Num() : 0; }
+	int32 NumFound() const { return NumDiffsFound; }
+	bool HasFoundDiffs() const { return NumDiffsFound > 0; }
 
 private:
 	TArray<FMergeDiffResult>* ResultArray;
-	bool bHasFoundDiffs;
+	int32 NumDiffsFound;
 };
 
-/**
- * 
- */
 struct FDiffHelper
 {
-	// !IMPORTANT: If using FNodeMatch data, normalize the Additive and Subtractive states before
-	// calling this
+	static void DiffGraphs(
+		UEdGraph* OldGraph,
+		UEdGraph* NewGraph,
+		FMergeDiffResults& DiffsOut,
+		ENodeMatchStrategy MatchStrategy = ENodeMatchStrategy::ALL,
+		TArray<FNodeMatch>* NodeMatchesOut = nullptr,
+		TArray<UEdGraphNode*>* UnmatchedOldNodesOut = nullptr,
+		TArray<UEdGraphNode*>* UnmatchedNewNodesOut = nullptr);
+
 	static void DiffNodes(
 		UEdGraphNode* OldNode, 
 		UEdGraphNode* NewNode, 
@@ -124,12 +158,47 @@ struct FDiffHelper
 		UEdGraphPin* NewPin,
 		FMergeDiffResults& DiffsOut);
 
-	static void DiffLink(
-		LinkMatch LinkMatch,
+	static void DiffLinks(
+		const FGraphLink& OldLink,
+		const FGraphLink& NewLink,
 		FMergeDiffResults& DiffsOut);
 
-	// @TODO: Use the initial full diff as a cache, since this gives more accurate results (since it's a 2 step process)
-	// Also by doing this we remain consistent in the matches, avoiding issues where 2 nodes might match
-	// for the links, but not for the nodes. Potentially causing weird situations?
-	static bool BetterNodeMatch(UEdGraphNode* OldNode, UEdGraphNode* NewNode);
+	static bool IsExactNodeMatch(const UEdGraphNode* OldNode, const UEdGraphNode* NewNode);
+
+	static TArray<FNodeMatch> FindNodeMatches(
+		UEdGraph* OldGraph,
+		UEdGraph* NewGraph,
+		ENodeMatchStrategy MatchStrategy = ENodeMatchStrategy::ALL,
+		TArray<UEdGraphNode*>* OutUnmatchedOldNodes = nullptr,
+		TArray<UEdGraphNode*>* OutUnmatchedNewNodes = nullptr);
+
+	static TArray<FPinMatch> FindPinMatches(
+		UEdGraphNode* OldNode,
+		UEdGraphNode* NewNode,
+		TArray<UEdGraphPin*>* OutUnmatchedOldPins = nullptr,
+		TArray<UEdGraphPin*>* OutUnmatchedNewPins = nullptr);
+
+	static TArray<FLinkMatch> FindLinkMatches(
+		UEdGraphPin* OldPin,
+		UEdGraphPin* NewPin,
+		TArray<FGraphLink>* OutUnmatchedOldLinks = nullptr,
+		TArray<FGraphLink>* OutUnmatchedNewLinks = nullptr);
+
+	static TArray<FNodeMatch> FindExactNodeMatches(
+		TArray<UEdGraphNode*>& UnmatchedOldNodes,
+		TArray<UEdGraphNode*>& UnmatchedNewNodes
+	);
+
+	static TArray<FNodeMatch> FindApproximateNodeMatches(
+		TArray<UEdGraphNode*>& UnmatchedOldNodes,
+		TArray<UEdGraphNode*>& UnmatchedNewNodes
+	);
+
+	static TArray<FNodeMatch> FindApproximateNodeMatchesBetweenNodesOfTheSameType(
+		const TArrayView<UEdGraphNode*>& UnmatchedOldNodesOfType, 
+		const TArrayView<UEdGraphNode*>& UnmatchedNewNodesOfType
+	);
+	
+	// Matches the nodes based on exact match, or class and title
+	static bool WeakNodeMatch(UEdGraphNode* OldNode, UEdGraphNode* NewNode);
 };

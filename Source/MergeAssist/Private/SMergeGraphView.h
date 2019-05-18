@@ -83,9 +83,14 @@ private:
 
 	TSharedPtr<MergeGraphChange> SelectedChange;
 
-	// @TODO: Remove this temp code
+	// @TODO: Remove debug code
 	TArray<TSharedPtr<FMergeDiffResult>> MergeDiffResults;
 	TSharedPtr<SListView<TSharedPtr<FMergeDiffResult>>> MergeDiffList;
 	void MergeDiffListWidgetOnSelectionChanged(TSharedPtr<FMergeDiffResult> SelectedItem, 
-	ESelectInfo::Type SelectInfo, TSharedPtr<SBox> DetailContainer);
+		ESelectInfo::Type SelectInfo, TSharedPtr<SBox> DetailContainer);
+
+	TArray<TSharedPtr<FNodeMatch>> NodeMatches;
+	TSharedPtr<SListView<TSharedPtr<FNodeMatch>>> NodeMatchList;
+	void NodeMatchListWidgetOnSelectionChanged(TSharedPtr<FNodeMatch> SelectedItem,
+		ESelectInfo::Type SelectInfo);
 };

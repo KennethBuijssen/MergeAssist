@@ -11,6 +11,7 @@
 #include "BlueprintEditor.h"
 #include "BlueprintEditorUtils.h"
 #include "GraphMergeHelper.h"
+#include "GraphDiffControl.h"
 
 BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
@@ -205,60 +206,48 @@ void SMergeGraphView::NotifyStatus(bool IsSuccessful, const FText ErrorMessage)
 // @TODO: Remove this
 #if 1 // Some temp code
 
-static void TempGenMergeDiffResults(UEdGraph* OldGraph, UEdGraph* NewGraph, TArray<TSharedPtr<FMergeDiffResult>>& Out)
+// @TODO: Formalize
+static void TempGenDiffResults(UEdGraph* OldGraph, UEdGraph* NewGraph, TArray<TSharedPtr<FMergeDiffResult>>& MergeDiffsOut,TArray<TSharedPtr<FNodeMatch>>& NodeMatchesOut)
 {
 	if (!OldGraph || !NewGraph) return;
 
-	TSet<UEdGraphNode const*> MatchedRhsNodes;
+	// We want to gather all data possible drom node matches 
 	TArray<FMergeDiffResult> ResultsOut;
 	FMergeDiffResults Results = FMergeDiffResults(&ResultsOut);
-		
-	TArray<FGraphDiffControl::FNodeMatch> NodeMatchesOut;
 
-	FGraphDiffControl::FNodeDiffContext AdditiveDiffContext;
-	AdditiveDiffContext.NodeTypeDisplayName = LOCTEXT("NodeDiffDisplayName", "Node");
+	// Arrays to gather output data
+	TArray<FNodeMatch> NodeMatches;
+	TArray<UEdGraphNode*> UnmatchedOldNodesOut;
+	TArray<UEdGraphNode*> UnmatchedNewNodesOut;
 
-	// march through the all the nodes in the rhs graph and look for matches 
-	for (UEdGraphNode* const RhsNode : NewGraph->Nodes)
+	FDiffHelper::DiffGraphs(OldGraph, NewGraph, Results, ENodeMatchStrategy::ALL, &NodeMatches, &UnmatchedOldNodesOut, &UnmatchedNewNodesOut);
+
+	// @TODO: Temp, rewrite the output of DiffGraphs to match the layout of the debug UI
+
+	// Copy the node matches, and all unmatched nodes to a list of shared ptrs so we can display them
+	for (auto Match : NodeMatches)
 	{
-		if (RhsNode)
-		{
-			FGraphDiffControl::FNodeMatch NodeMatch = FGraphDiffControl::FindNodeMatch(OldGraph, RhsNode, NodeMatchesOut);
-			// if we found a corresponding node in the lhs graph, track it (so we
-			// can prevent future matches with the same nodes)
-			if (NodeMatch.IsValid())
-			{
-				MatchedRhsNodes.Add(NodeMatch.OldNode);
-			}
-
-			FDiffHelper::DiffNodes(NodeMatch.OldNode, NodeMatch.NewNode, Results);
-		}
+		NodeMatchesOut.Add(TSharedPtr<FNodeMatch>(new FNodeMatch(Match)));
 	}
 
-	FGraphDiffControl::FNodeDiffContext SubtractiveDiffContext = AdditiveDiffContext;
-	SubtractiveDiffContext.DiffMode = FGraphDiffControl::EDiffMode::Subtractive;
-	SubtractiveDiffContext.DiffFlags = FGraphDiffControl::EDiffFlags::NodeExistance;
+	for (auto UnmatchedOldNode : UnmatchedOldNodesOut)
+	{
+		FNodeMatch HackMatch = {};
+		HackMatch.OldNode = UnmatchedOldNode;
+		NodeMatchesOut.Add(TSharedPtr<FNodeMatch>(new FNodeMatch(HackMatch)));
+	}
+
+	for (auto UnmatchedNewNode : UnmatchedNewNodesOut)
+	{
+		FNodeMatch HackMatch = {};
+		HackMatch.NewNode = UnmatchedNewNode;
+		NodeMatchesOut.Add(TSharedPtr<FNodeMatch>(new FNodeMatch(HackMatch)));
+	}
+
+	for (const auto& Result : ResultsOut) {
+		MergeDiffsOut.Add(TSharedPtr<FMergeDiffResult>(new FMergeDiffResult(Result)));
+	}
 	
-	// go through the lhs nodes to catch ones that may have been missing from the rhs graph
-	for (UEdGraphNode* const LhsNode : OldGraph->Nodes)
-	{
-		// if this node has already been matched, move on
-		if ((LhsNode == nullptr) || MatchedRhsNodes.Find(LhsNode))
-		{
-			continue;
-		}
-
-		// @TODO: Important this is reversed because the nodematch output is reversed as well
-		FGraphDiffControl::FNodeMatch NodeMatch = FGraphDiffControl::FindNodeMatch(NewGraph, LhsNode, NodeMatchesOut);
-		FDiffHelper::DiffNodes(NodeMatch.NewNode, NodeMatch.OldNode, Results);
-	}
-
-	// Copy to shared ptrs since that's what we need for the list
-	for (auto Result : ResultsOut)
-	{
-		Out.Add(TSharedPtr<FMergeDiffResult>(new FMergeDiffResult(Result)));
-	}
-
 	struct SortDiff
 	{
 		bool operator()(const TSharedPtr<FMergeDiffResult>& A, const TSharedPtr<FMergeDiffResult>& B) const
@@ -269,7 +258,7 @@ static void TempGenMergeDiffResults(UEdGraph* OldGraph, UEdGraph* NewGraph, TArr
 
 	// Sort the results by the EDiffType, this is the order in which the different types 
 	// should be presented to the user
-	Sort(Out.GetData(), Out.Num(), SortDiff());
+	Sort(MergeDiffsOut.GetData(), MergeDiffsOut.Num(), SortDiff());
 }
 
 TSharedRef<ITableRow> TempGenerateListItems(TSharedPtr<FMergeDiffResult> Item,
@@ -280,6 +269,33 @@ TSharedRef<ITableRow> TempGenerateListItems(TSharedPtr<FMergeDiffResult> Item,
 	[
 		SNew(STextBlock)
 		.Text(Item->DisplayString)
+	];
+
+	return SNew(STableRow<TSharedPtr<FString>>, OwnerTable)
+	[
+		RowContent
+	];
+}
+
+TSharedRef<ITableRow> TempGenerateMatchListItems(TSharedPtr<FNodeMatch> Item,
+	const TSharedRef<STableViewBase>& OwnerTable)
+{
+	FText Title = Item->OldNode
+		? Item->OldNode->GetNodeTitle(ENodeTitleType::FullTitle)
+		: Item->NewNode->GetNodeTitle(ENodeTitleType::FullTitle);
+
+	FString Text = "";
+	if (Item->OldNode) Text += Item->OldNode->GetFName().ToString();
+	Text += " : ";
+	if (Item->NewNode) Text += Item->NewNode->GetFName().ToString();
+	
+	TSharedRef<SHorizontalBox> RowContent = SNew(SHorizontalBox)
+	+SHorizontalBox::Slot()
+	[
+		SNew(STextBlock)
+		.Text(FText::FromString(Text))
+		//.Text(FText::FromName(Item->OldNode ? Item->OldNode->GetFName() : Item->NewNode->GetFName()))
+		//.Text(Title)
 	];
 
 	return SNew(STableRow<TSharedPtr<FString>>, OwnerTable)
@@ -306,6 +322,18 @@ void SMergeGraphView::MergeDiffListWidgetOnSelectionChanged(TSharedPtr<FMergeDif
 	DetailContainer->SetContent(
 		SNew(STextBlock).Text(FText::FromString(GenerateDebugText(ChangeToHighlight)))
 	);
+}
+
+void SMergeGraphView::NodeMatchListWidgetOnSelectionChanged(TSharedPtr<FNodeMatch> SelectedItem, ESelectInfo::Type SelectInfo)
+{
+	if (!SelectedItem) return;
+	
+	// Use the MergeGraphChange to hack back into the highlight
+	MergeGraphChange ChangeToHighlight = {};
+	ChangeToHighlight.LocalDiff.Node1 = SelectedItem->OldNode;
+	ChangeToHighlight.LocalDiff.Node2 = SelectedItem->NewNode;
+
+	Highlight(ChangeToHighlight);
 }
 
 #endif
@@ -455,10 +483,11 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintSelect
 	// this is to ensure that all UI elements are initialized
 	FocusGraph(AllGraphNames.Array()[0]);
 
-	// @TODO: Remove this temp code
+	// @TODO: Remove debug code
 	auto* OldGraph = FindGraphByName(*Data.BlueprintBase, "EventGraph");
 	auto* NewGraph = FindGraphByName(*Data.BlueprintLocal, "EventGraph");
-	TempGenMergeDiffResults(OldGraph, NewGraph, MergeDiffResults);
+
+	TempGenDiffResults(OldGraph, NewGraph, MergeDiffResults, NodeMatches);
 
 	MergeDiffList = SNew(SListView<TSharedPtr<FMergeDiffResult>>)
 		.ItemHeight(24)
@@ -466,6 +495,13 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintSelect
 		.SelectionMode(ESelectionMode::Single)
 		.OnGenerateRow_Static(&TempGenerateListItems)
 		.OnSelectionChanged(this, &SMergeGraphView::MergeDiffListWidgetOnSelectionChanged, DetailWidget);
+
+	NodeMatchList = SNew(SListView<TSharedPtr<FNodeMatch>>)
+		.ItemHeight(24)
+		.ListItemsSource(&NodeMatches)
+		.SelectionMode(ESelectionMode::Single)
+		.OnGenerateRow_Static(&TempGenerateMatchListItems)
+		.OnSelectionChanged(this, &SMergeGraphView::NodeMatchListWidgetOnSelectionChanged);
 
 	// We get one tab container with the different tabs, and within this we add the splitter
 	// The reason for this is so we could potentially create a fullscreen target tab
@@ -489,12 +525,13 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintSelect
 		+SSplitter::Slot()
 		.Value(0.1f)
 		[
-			GraphListWidget.ToSharedRef()
+			NodeMatchList.ToSharedRef()
+			//GraphListWidget.ToSharedRef()
 		]
 		+SSplitter::Slot()
 		.Value(0.7f)
 		[
-			MergeDiffList.ToSharedRef()
+			MergeDiffList.ToSharedRef()	
 			//DiffListWidget.ToSharedRef()
 		]
 		+ SSplitter::Slot()
