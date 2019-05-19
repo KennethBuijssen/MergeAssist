@@ -11,7 +11,6 @@
 #include "BlueprintEditor.h"
 #include "BlueprintEditorUtils.h"
 #include "GraphMergeHelper.h"
-#include "GraphDiffControl.h"
 
 BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
@@ -99,14 +98,17 @@ void SMergeGraphView::Highlight(MergeGraphChange& Change)
 			if (Panel) Panel->FocusDiff(*Node);
 		}
 	};
+
 	
+	
+
 	// Highlight the remote diff
-	HighlightPinOrNode(Change.RemoteDiff.Pin1, Change.RemoteDiff.Node1);
-	HighlightPinOrNode(Change.RemoteDiff.Pin2, Change.RemoteDiff.Node2);
+	HighlightPinOrNode(Change.RemoteDiff.PinOld, Change.RemoteDiff.NodeOld);
+	HighlightPinOrNode(Change.RemoteDiff.PinNew, Change.RemoteDiff.NodeNew);
 
 	// Highlight the local diff
-	HighlightPinOrNode(Change.LocalDiff.Pin1, Change.LocalDiff.Node1);
-	HighlightPinOrNode(Change.LocalDiff.Pin2, Change.LocalDiff.Node2);
+	HighlightPinOrNode(Change.LocalDiff.PinOld, Change.LocalDiff.NodeOld);
+	HighlightPinOrNode(Change.LocalDiff.PinNew, Change.LocalDiff.NodeNew);
 
 	// Highlight the related pins and nodes in the target graph
 	const auto HighlightInTargetGraph = [this](UEdGraphPin* Pin, UEdGraphNode* Node)
@@ -122,12 +124,12 @@ void SMergeGraphView::Highlight(MergeGraphChange& Change)
 	};
 
 	// Highlight the remote diff
-	HighlightInTargetGraph(Change.RemoteDiff.Pin1, Change.RemoteDiff.Node1);
-	HighlightInTargetGraph(Change.RemoteDiff.Pin2, Change.RemoteDiff.Node2);
+	HighlightInTargetGraph(Change.RemoteDiff.PinOld, Change.RemoteDiff.NodeOld);
+	HighlightInTargetGraph(Change.RemoteDiff.PinNew, Change.RemoteDiff.NodeNew);
 
 	// Highlight the local diff
-	HighlightInTargetGraph(Change.LocalDiff.Pin1, Change.LocalDiff.Node1);
-	HighlightInTargetGraph(Change.LocalDiff.Pin2, Change.LocalDiff.Node2);
+	HighlightInTargetGraph(Change.LocalDiff.PinOld, Change.LocalDiff.NodeOld);
+	HighlightInTargetGraph(Change.LocalDiff.PinNew, Change.LocalDiff.NodeNew);
 }
 
 void SMergeGraphView::HighlightClear()
@@ -153,15 +155,15 @@ void SMergeGraphView::HighlightClear()
 
 static FString GenerateDebugText(const MergeGraphChange& MergeEntry)
 {
-	auto const GenerateDetailTextForDiff = [](const FDiffSingleResult& Diff)
+	auto const GenerateDetailTextForDiff = [](const FMergeDiffResult& Diff)
 	{
 		FString OutputString = Diff.DisplayString.ToString();
 
-		if (Diff.Node1) OutputString += "\nNode1: " + Diff.Node1->GetNodeTitle(ENodeTitleType::FullTitle).ToString();
-		if (Diff.Pin1) OutputString += "\nPin1: " + Diff.Pin1->GetName();
+		if (Diff.NodeOld) OutputString += "\nNode1: " + Diff.NodeOld->GetNodeTitle(ENodeTitleType::FullTitle).ToString();
+		if (Diff.PinOld) OutputString += "\nPin1: " + Diff.PinOld->GetName();
 
-		if (Diff.Node2) OutputString += "\nNode2: " + Diff.Node2->GetNodeTitle(ENodeTitleType::FullTitle).ToString();
-		if (Diff.Pin2) OutputString += "\nPin2: " + Diff.Pin2->GetName();
+		if (Diff.NodeNew) OutputString += "\nNode2: " + Diff.NodeNew->GetNodeTitle(ENodeTitleType::FullTitle).ToString();
+		if (Diff.PinNew) OutputString += "\nPin2: " + Diff.PinNew->GetName();
 		
 		return OutputString;
 	};
@@ -202,141 +204,6 @@ void SMergeGraphView::NotifyStatus(bool IsSuccessful, const FText ErrorMessage)
 		StatusWidget->SetText(ErrorMessage);
 	}
 }
-
-// @TODO: Remove this
-#if 1 // Some temp code
-
-// @TODO: Formalize
-static void TempGenDiffResults(UEdGraph* OldGraph, UEdGraph* NewGraph, TArray<TSharedPtr<FMergeDiffResult>>& MergeDiffsOut,TArray<TSharedPtr<FNodeMatch>>& NodeMatchesOut)
-{
-	if (!OldGraph || !NewGraph) return;
-
-	// We want to gather all data possible drom node matches 
-	TArray<FMergeDiffResult> ResultsOut;
-	FMergeDiffResults Results = FMergeDiffResults(&ResultsOut);
-
-	// Arrays to gather output data
-	TArray<FNodeMatch> NodeMatches;
-	TArray<UEdGraphNode*> UnmatchedOldNodesOut;
-	TArray<UEdGraphNode*> UnmatchedNewNodesOut;
-
-	FDiffHelper::DiffGraphs(OldGraph, NewGraph, Results, ENodeMatchStrategy::ALL, &NodeMatches, &UnmatchedOldNodesOut, &UnmatchedNewNodesOut);
-
-	// @TODO: Temp, rewrite the output of DiffGraphs to match the layout of the debug UI
-
-	// Copy the node matches, and all unmatched nodes to a list of shared ptrs so we can display them
-	for (auto Match : NodeMatches)
-	{
-		NodeMatchesOut.Add(TSharedPtr<FNodeMatch>(new FNodeMatch(Match)));
-	}
-
-	for (auto UnmatchedOldNode : UnmatchedOldNodesOut)
-	{
-		FNodeMatch HackMatch = {};
-		HackMatch.OldNode = UnmatchedOldNode;
-		NodeMatchesOut.Add(TSharedPtr<FNodeMatch>(new FNodeMatch(HackMatch)));
-	}
-
-	for (auto UnmatchedNewNode : UnmatchedNewNodesOut)
-	{
-		FNodeMatch HackMatch = {};
-		HackMatch.NewNode = UnmatchedNewNode;
-		NodeMatchesOut.Add(TSharedPtr<FNodeMatch>(new FNodeMatch(HackMatch)));
-	}
-
-	for (const auto& Result : ResultsOut) {
-		MergeDiffsOut.Add(TSharedPtr<FMergeDiffResult>(new FMergeDiffResult(Result)));
-	}
-	
-	struct SortDiff
-	{
-		bool operator()(const TSharedPtr<FMergeDiffResult>& A, const TSharedPtr<FMergeDiffResult>& B) const
-		{
-			return A->Type < B->Type;
-		}
-	};
-
-	// Sort the results by the EDiffType, this is the order in which the different types 
-	// should be presented to the user
-	Sort(MergeDiffsOut.GetData(), MergeDiffsOut.Num(), SortDiff());
-}
-
-TSharedRef<ITableRow> TempGenerateListItems(TSharedPtr<FMergeDiffResult> Item,
-	const TSharedRef<STableViewBase>& OwnerTable)
-{
-	TSharedRef<SHorizontalBox> RowContent = SNew(SHorizontalBox)
-	+SHorizontalBox::Slot()
-	[
-		SNew(STextBlock)
-		.Text(Item->DisplayString)
-	];
-
-	return SNew(STableRow<TSharedPtr<FString>>, OwnerTable)
-	[
-		RowContent
-	];
-}
-
-TSharedRef<ITableRow> TempGenerateMatchListItems(TSharedPtr<FNodeMatch> Item,
-	const TSharedRef<STableViewBase>& OwnerTable)
-{
-	FText Title = Item->OldNode
-		? Item->OldNode->GetNodeTitle(ENodeTitleType::FullTitle)
-		: Item->NewNode->GetNodeTitle(ENodeTitleType::FullTitle);
-
-	FString Text = "";
-	if (Item->OldNode) Text += Item->OldNode->GetFName().ToString();
-	Text += " : ";
-	if (Item->NewNode) Text += Item->NewNode->GetFName().ToString();
-	
-	TSharedRef<SHorizontalBox> RowContent = SNew(SHorizontalBox)
-	+SHorizontalBox::Slot()
-	[
-		SNew(STextBlock)
-		.Text(FText::FromString(Text))
-		//.Text(FText::FromName(Item->OldNode ? Item->OldNode->GetFName() : Item->NewNode->GetFName()))
-		//.Text(Title)
-	];
-
-	return SNew(STableRow<TSharedPtr<FString>>, OwnerTable)
-	[
-		RowContent
-	];
-}
-
-void SMergeGraphView::MergeDiffListWidgetOnSelectionChanged(TSharedPtr<FMergeDiffResult> SelectedItem, 
-	ESelectInfo::Type SelectInfo, TSharedPtr<SBox> DetailContainer)
-{
-	if (!SelectedItem) return;
-
-	// Highlight the related nodes and pins in each of the previews
-	MergeGraphChange ChangeToHighlight = {};
-	ChangeToHighlight.LocalDiff.Node1 = SelectedItem->NodeOld;
-	ChangeToHighlight.LocalDiff.Node2 = SelectedItem->NodeNew;
-	ChangeToHighlight.LocalDiff.Pin1  = SelectedItem->PinOld;
-	ChangeToHighlight.LocalDiff.Pin2  = SelectedItem->PinNew;
-
-	Highlight(ChangeToHighlight);
-
-	// Display the debug info for the change
-	DetailContainer->SetContent(
-		SNew(STextBlock).Text(FText::FromString(GenerateDebugText(ChangeToHighlight)))
-	);
-}
-
-void SMergeGraphView::NodeMatchListWidgetOnSelectionChanged(TSharedPtr<FNodeMatch> SelectedItem, ESelectInfo::Type SelectInfo)
-{
-	if (!SelectedItem) return;
-	
-	// Use the MergeGraphChange to hack back into the highlight
-	MergeGraphChange ChangeToHighlight = {};
-	ChangeToHighlight.LocalDiff.Node1 = SelectedItem->OldNode;
-	ChangeToHighlight.LocalDiff.Node2 = SelectedItem->NewNode;
-
-	Highlight(ChangeToHighlight);
-}
-
-#endif
 
 void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintSelection& InData, TSharedPtr<SBox> SideContainer)
 {
@@ -483,26 +350,6 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintSelect
 	// this is to ensure that all UI elements are initialized
 	FocusGraph(AllGraphNames.Array()[0]);
 
-	// @TODO: Remove debug code
-	auto* OldGraph = FindGraphByName(*Data.BlueprintBase, "EventGraph");
-	auto* NewGraph = FindGraphByName(*Data.BlueprintLocal, "EventGraph");
-
-	TempGenDiffResults(OldGraph, NewGraph, MergeDiffResults, NodeMatches);
-
-	MergeDiffList = SNew(SListView<TSharedPtr<FMergeDiffResult>>)
-		.ItemHeight(24)
-		.ListItemsSource(&MergeDiffResults)
-		.SelectionMode(ESelectionMode::Single)
-		.OnGenerateRow_Static(&TempGenerateListItems)
-		.OnSelectionChanged(this, &SMergeGraphView::MergeDiffListWidgetOnSelectionChanged, DetailWidget);
-
-	NodeMatchList = SNew(SListView<TSharedPtr<FNodeMatch>>)
-		.ItemHeight(24)
-		.ListItemsSource(&NodeMatches)
-		.SelectionMode(ESelectionMode::Single)
-		.OnGenerateRow_Static(&TempGenerateMatchListItems)
-		.OnSelectionChanged(this, &SMergeGraphView::NodeMatchListWidgetOnSelectionChanged);
-
 	// We get one tab container with the different tabs, and within this we add the splitter
 	// The reason for this is so we could potentially create a fullscreen target tab
 	ChildSlot
@@ -525,14 +372,12 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintSelect
 		+SSplitter::Slot()
 		.Value(0.1f)
 		[
-			NodeMatchList.ToSharedRef()
-			//GraphListWidget.ToSharedRef()
+			GraphListWidget.ToSharedRef()
 		]
 		+SSplitter::Slot()
 		.Value(0.7f)
 		[
-			MergeDiffList.ToSharedRef()	
-			//DiffListWidget.ToSharedRef()
+			DiffListWidget.ToSharedRef()
 		]
 		+ SSplitter::Slot()
 		.Value(0.2f)
@@ -781,7 +626,7 @@ TSharedRef<ITableRow> SMergeGraphView::DiffListWidgetGenerateListItems(TSharedPt
 		.ColorAndOpacity(Item->DisplayColor)
 	];
 	
-	if (Item->RemoteDiff.Diff != EDiffType::NO_DIFFERENCE)
+	if (Item->RemoteDiff.Type != EMergeDiffType::NO_DIFFERENCE)
 	{
 		RowContent->AddSlot().AutoWidth().AttachWidget(CreateCheckbox(EMergeState::Remote, SoftBlue));
 	}
@@ -794,7 +639,7 @@ TSharedRef<ITableRow> SMergeGraphView::DiffListWidgetGenerateListItems(TSharedPt
 	RowContent->AddSlot().AutoWidth().AttachWidget(CreateCheckbox(EMergeState::Base, SoftYellow));
 
 	SBoxPanel::FSlot& LocalSlot = RowContent->AddSlot().AutoWidth();
-	if (Item->LocalDiff.Diff != EDiffType::NO_DIFFERENCE)
+	if (Item->LocalDiff.Type != EMergeDiffType::NO_DIFFERENCE)
 	{
 		RowContent->AddSlot().AutoWidth().AttachWidget(CreateCheckbox(EMergeState::Local, SoftGreen));
 	}

@@ -4,16 +4,17 @@
 
 #include "EdGraph/EdGraph.h"
 #include "EdGraphUtilities.h"
-#include "GraphDiffControl.h"
 
 #define LOCTEXT_NAMESPACE "GraphMergeHelper"
 
+#if 0
 static UEdGraphPin* SafeFindPin(UEdGraphNode* Node, UEdGraphPin* Pin)
 {
 	if (!Node || !Pin) return nullptr;
 
 	return Node->FindPin(Pin->PinName, Pin->Direction);
 }
+#endif
 
 static void CloneGraphIntoGraph(UEdGraph* FromGraph, UEdGraph* TargetGraph, TMap<UEdGraphNode*, UEdGraphNode*>& NodeMappingOut)
 {
@@ -44,90 +45,29 @@ static void CloneGraphIntoGraph(UEdGraph* FromGraph, UEdGraph* TargetGraph, TMap
 	TargetGraph->NotifyGraphChanged();
 }
 
-static bool DiffGraphsExt(UEdGraph * const LhsGraph, UEdGraph * const RhsGraph, TArray<FDiffSingleResult>& DiffsOut, TArray<FGraphDiffControl::FNodeMatch>& NodeMatchesOut)
+static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FMergeDiffResult>& RemoteDifferences, const TArray<FMergeDiffResult>& LocalDifferences)
 {
-	// Slightly modified version of GraphDiffControl::DiffGraphs
-	// which exposes the NodeMatches to the caller
-
-	bool bFoundDifferences = false;
-
-	if (LhsGraph && RhsGraph)
-	{
-		NodeMatchesOut.Empty();
-		TSet<UEdGraphNode const*> MatchedRhsNodes;
-
-		FGraphDiffControl::FNodeDiffContext AdditiveDiffContext;
-		AdditiveDiffContext.NodeTypeDisplayName = LOCTEXT("NodeDiffDisplayName", "Node");
-
-		// march through the all the nodes in the rhs graph and look for matches 
-		for (UEdGraphNode* const RhsNode : RhsGraph->Nodes)
-		{
-			if (RhsNode)
-			{
-				FGraphDiffControl::FNodeMatch NodeMatch = FGraphDiffControl::FindNodeMatch(LhsGraph, RhsNode, NodeMatchesOut);
-				// if we found a corresponding node in the lhs graph, track it (so we
-				// can prevent future matches with the same nodes)
-				if (NodeMatch.IsValid())
-				{
-					NodeMatchesOut.Add(NodeMatch);
-					MatchedRhsNodes.Add(NodeMatch.OldNode);
-				}
-
-				bFoundDifferences |= NodeMatch.Diff(AdditiveDiffContext, &DiffsOut);
-			}
-		}
-
-		FGraphDiffControl::FNodeDiffContext SubtractiveDiffContext = AdditiveDiffContext;
-		SubtractiveDiffContext.DiffMode = FGraphDiffControl::EDiffMode::Subtractive;
-		SubtractiveDiffContext.DiffFlags = FGraphDiffControl::EDiffFlags::NodeExistance;
-
-		// go through the lhs nodes to catch ones that may have been missing from the rhs graph
-		for (UEdGraphNode* const LhsNode : LhsGraph->Nodes)
-		{
-			// if this node has already been matched, move on
-			if ((LhsNode == nullptr) || MatchedRhsNodes.Find(LhsNode))
-			{
-				continue;
-			}
-
-			FGraphDiffControl::FNodeMatch NodeMatch = FGraphDiffControl::FindNodeMatch(RhsGraph, LhsNode, NodeMatchesOut);
-			bFoundDifferences |= NodeMatch.Diff(SubtractiveDiffContext, &DiffsOut);
-		}
-	}
-
-	// storing the graph name for all diff entries:
-	const FName GraphName = LhsGraph ? LhsGraph->GetFName() : RhsGraph->GetFName();
-	for( FDiffSingleResult& Entry : DiffsOut )
-	{
-		Entry.OwningGraph = GraphName;
-	}
-
-	return bFoundDifferences;
-}
-
-static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FDiffSingleResult>& RemoteDifferences, const TArray<FDiffSingleResult>& LocalDifferences)
-{
-	TMap<const FDiffSingleResult*, const FDiffSingleResult*> ConflictMap;
+	TMap<const FMergeDiffResult*, const FMergeDiffResult*> ConflictMap;
 
 	// Generate a mapping of all conflicts
 	for (const auto& RemoteDiff : RemoteDifferences)
 	{
-		const FDiffSingleResult* ConflictingDifference = nullptr;
+		const FMergeDiffResult* ConflictingDifference = nullptr;
 
 		for (const auto& LocalDiff : LocalDifferences)
 		{
 			// The conflict detection code is based on the code from SMergeGraphView.cpp
 			// However it seems that both are affected by some of the inconsistencies in
 			// the FGraphDiffControl::DiffGraphs implementation
-			if (RemoteDiff.Node1 == LocalDiff.Node1)
+			if (RemoteDiff.NodeOld == LocalDiff.NodeOld)
 			{
-				const bool bIsRemoveDiff = RemoteDiff.Diff == EDiffType::NODE_REMOVED || LocalDiff.Diff == EDiffType::NODE_REMOVED;
-				const bool bIsNodeMoveDiff = RemoteDiff.Diff == EDiffType::NODE_MOVED || LocalDiff.Diff == EDiffType::NODE_MOVED;
+				const bool bIsRemoveDiff = RemoteDiff.Type == EMergeDiffType::NODE_REMOVED || LocalDiff.Type == EMergeDiffType::NODE_REMOVED;
+				const bool bIsNodeMoveDiff = RemoteDiff.Type == EMergeDiffType::NODE_MOVED || LocalDiff.Type == EMergeDiffType::NODE_MOVED;
 
 				// Check if both diffs effect the same pin, note that Pin1 can be set to nullptr
 				// in this case the change effects the entire node, which for our purposes is the 
 				// same as if they would be effecting the same pin
-				const bool bAreEffectingSamePin = RemoteDiff.Pin1 == LocalDiff.Pin1;
+				const bool bAreEffectingSamePin = RemoteDiff.PinOld == LocalDiff.PinOld;
 
 				if ((bIsRemoveDiff || bAreEffectingSamePin) && !bIsNodeMoveDiff)
 				{
@@ -135,7 +75,7 @@ static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FDif
 					break;
 				}
 			}
-			else if (RemoteDiff.Pin1 != nullptr && (RemoteDiff.Pin1 == LocalDiff.Pin1))
+			else if (RemoteDiff.PinOld != nullptr && (RemoteDiff.PinOld == LocalDiff.PinOld))
 			{
 				// it's possible the users made the same change to the same pin, but given the wide
 				// variety of changes that can be made to a pin it is difficult to identify the change 
@@ -157,7 +97,7 @@ static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FDif
 	{
 		for (const auto& Diff : RemoteDifferences)
 		{
-			const FDiffSingleResult** ConflictingDiff = ConflictMap.Find(&Diff);
+			const FMergeDiffResult** ConflictingDiff = ConflictMap.Find(&Diff);
 
 			FText Label = !ConflictingDiff ? Diff.DisplayString :
 				FText::Format(LOCTEXT("ConflictIdentifier", "CONFLICT: {0} conflicts with {1}"), 
@@ -168,7 +108,7 @@ static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FDif
 			NewEntry->DisplayColor = ConflictingDiff ? SoftRed : SoftBlue;
 
 			NewEntry->RemoteDiff = Diff;
-			NewEntry->LocalDiff = ConflictingDiff ? **ConflictingDiff : FDiffSingleResult{};
+			NewEntry->LocalDiff = ConflictingDiff ? **ConflictingDiff : FMergeDiffResult{};
 			NewEntry->bHasConflicts = ConflictingDiff != nullptr;
 
 			Ret.Push(NewEntry);
@@ -176,7 +116,7 @@ static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FDif
 
 		for (const auto& Diff : LocalDifferences)
 		{
-			const FDiffSingleResult** ConflictingDiff = ConflictMap.Find(&Diff);
+			const FMergeDiffResult** ConflictingDiff = ConflictMap.Find(&Diff);
 
 			// Since we already handled all the conflicts we can skip them for now
 			if (!ConflictingDiff)
@@ -185,7 +125,7 @@ static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FDif
 				NewEntry->Label = Diff.DisplayString;
 				NewEntry->DisplayColor = SoftGreen;
 	
-				NewEntry->RemoteDiff = FDiffSingleResult{};
+				NewEntry->RemoteDiff = FMergeDiffResult{};
 				NewEntry->LocalDiff = Diff;
 				NewEntry->bHasConflicts = false;
 
@@ -200,8 +140,8 @@ static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FDif
 	{
 		bool operator() (const TSharedPtr<MergeGraphChange>& A, const TSharedPtr<MergeGraphChange>& B) const
 		{
-			const EDiffType::Type AType = A->RemoteDiff.Diff ? A->RemoteDiff.Diff : A->LocalDiff.Diff;
-			const EDiffType::Type BType = B->RemoteDiff.Diff ? B->RemoteDiff.Diff : B->LocalDiff.Diff;
+			const EMergeDiffType AType = A->RemoteDiff.Type != EMergeDiffType::NO_DIFFERENCE ? A->RemoteDiff.Type : A->LocalDiff.Type;
+			const EMergeDiffType BType = B->RemoteDiff.Type != EMergeDiffType::NO_DIFFERENCE ? B->RemoteDiff.Type : B->LocalDiff.Type;
 
 			return AType < BType;
 		}
@@ -213,36 +153,35 @@ static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FDif
 }
 
 GraphMergeHelper::GraphMergeHelper(UEdGraph* RemoteGraph, UEdGraph* BaseGraph, UEdGraph* LocalGraph, UEdGraph* TargetGraph)
-	: RemoteGraph(RemoteGraph)
+	: GraphName(TargetGraph->GetFName())
+	, RemoteGraph(RemoteGraph)
 	, BaseGraph(BaseGraph)
 	, LocalGraph(LocalGraph)
 	, TargetGraph(TargetGraph)
-	, GraphName(TargetGraph->GetFName())
 {
 	// Clone the base graph into the target graph
 	CloneGraphIntoGraph(BaseGraph, TargetGraph, BaseToTargetNodeMap);
 
 	const auto GenerateDifferences = [](UEdGraph* NewGraph, UEdGraph* OldGraph, TMap<UEdGraphNode*, UEdGraphNode*>& NodeMappingOut)
 	{
-		TArray<FDiffSingleResult> Results;
+		TArray<FMergeDiffResult> Results;
+		FMergeDiffResults DiffResults = FMergeDiffResults(&Results);
+		TArray<FNodeMatch> NodeMatches;
 
-		TArray<FGraphDiffControl::FNodeMatch> NodeMatches;
-		DiffGraphsExt(OldGraph, NewGraph, Results, NodeMatches);
-		
-		struct SortDiff
+		// Diff the graphs, and collect both the diffs and node matches
+		FDiffHelper::DiffGraphs(OldGraph, NewGraph, DiffResults, ENodeMatchStrategy::ALL, &NodeMatches);
+
+		// Sort the results by the EMergeDiffType, this is the order in which the 
+		// different types should be displayed to the user
+		Sort(Results.GetData(), Results.Num(), 
+			[](const FMergeDiffResult& A, const FMergeDiffResult& B)
 		{
-			bool operator()(const FDiffSingleResult& A, const FDiffSingleResult& B) const
-			{
-				return A.Diff < B.Diff;
-			}
-		};
+			return A.Type < B.Type;
+		});
 
-		// Sort the results by the EDiffType, this is the order in which the different types 
-		// should be presented to the user
-		Sort(Results.GetData(), Results.Num(), SortDiff());
-
-		// Convert the node matches into a mapping
-		for (auto& NodeMatch : NodeMatches)
+		// Convert the node matches into a node mapping
+		// this can be used to later figure out which nodes we are talking about
+		for (const auto& NodeMatch : NodeMatches)
 		{
 			if (!NodeMatch.IsValid()) continue;
 
@@ -252,8 +191,8 @@ GraphMergeHelper::GraphMergeHelper(UEdGraph* RemoteGraph, UEdGraph* BaseGraph, U
 		return Results;
 	};
 
-	TArray<FDiffSingleResult> RemoteDifferences;
-	TArray<FDiffSingleResult> LocalDifferences;
+	TArray<FMergeDiffResult> RemoteDifferences;
+	TArray<FMergeDiffResult> LocalDifferences;
 
 	if (RemoteGraph && BaseGraph)
 	{
@@ -428,10 +367,12 @@ UEdGraphNode* GraphMergeHelper::GetBaseNodeInTargetGraph(UEdGraphNode* SourceNod
 	return nullptr;
 }
 
-bool GraphMergeHelper::ApplyDiff(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::ApplyDiff(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	switch (Diff.Diff)
+	switch (Diff.Type)
 	{
+		// @TODO: Update these
+#if 0
 	case EDiffType::NODE_REMOVED:         return ApplyDiff_NODE_REMOVED(Diff, bCanWrite);
 	case EDiffType::NODE_ADDED:           return ApplyDiff_NODE_ADDED(Diff, bCanWrite);
 	case EDiffType::PIN_LINKEDTO_NUM_DEC: return ApplyDiff_PIN_LINKEDTO_NUM_DEC(Diff, bCanWrite);
@@ -440,14 +381,18 @@ bool GraphMergeHelper::ApplyDiff(const FDiffSingleResult& Diff, const bool bCanW
 	case EDiffType::PIN_LINKEDTO_NODE:    return ApplyDiff_PIN_LINKEDTO_NODE(Diff, bCanWrite);
 	case EDiffType::NODE_MOVED:           return ApplyDiff_NODE_MOVED(Diff, bCanWrite);
 	case EDiffType::NODE_COMMENT:         return ApplyDiff_NODE_COMMENT(Diff, bCanWrite);
+#endif
+	case EMergeDiffType::NO_DIFFERENCE: // Remove this once we have another one implemented
 	default: return false;
 	}
 }
 
-bool GraphMergeHelper::RevertDiff(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::RevertDiff(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	switch (Diff.Diff)
+	switch (Diff.Type)
 	{
+		// @TODO: Update these
+#if 0
 	case EDiffType::NODE_REMOVED:         return RevertDiff_NODE_REMOVED(Diff, bCanWrite);
 	case EDiffType::NODE_ADDED:           return RevertDiff_NODE_ADDED(Diff, bCanWrite);
 	case EDiffType::PIN_LINKEDTO_NUM_DEC: return RevertDiff_PIN_LINKEDTO_NUM_DEC(Diff, bCanWrite);
@@ -456,6 +401,8 @@ bool GraphMergeHelper::RevertDiff(const FDiffSingleResult& Diff, const bool bCan
 	case EDiffType::PIN_LINKEDTO_NODE:    return RevertDiff_PIN_LINKEDTO_NODE(Diff, bCanWrite);
 	case EDiffType::NODE_MOVED:           return RevertDiff_NODE_MOVED(Diff, bCanWrite);
 	case EDiffType::NODE_COMMENT:         return RevertDiff_NODE_COMMENT(Diff, bCanWrite);
+#endif
+	case EMergeDiffType::NO_DIFFERENCE: // Remove this once we have another one implemented
 	default: return false;
 	}
 }
@@ -539,10 +486,10 @@ bool GraphMergeHelper::CloneToTarget(UEdGraphNode* SourceNode, bool bRestoreLink
 	return true;
 }
 
+#if 0
 /*****************************
  * ApplyDiff implementations *
  ****************************/
-
 bool GraphMergeHelper::ApplyDiff_NODE_REMOVED(const FDiffSingleResult& Diff, const bool bCanWrite)
 {
 	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Node1);
@@ -971,5 +918,6 @@ bool GraphMergeHelper::RevertDiff_NODE_COMMENT(const FDiffSingleResult& Diff, co
 
 	return true;
 }
+#endif
 
 #undef LOCTEXT_NAMESPACE
