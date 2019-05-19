@@ -17,16 +17,16 @@ enum struct EMergeDiffType
 	NODE_ADDED,
 	PIN_REMOVED,
 	PIN_ADDED,
+	PIN_DEFAULT_VALUE,	
 	LINK_REMOVED,
 	LINK_ADDED,
-	PIN_DEFAULT_VALUE_CHANGED,	
 	//PIN_TYPE_CATEGORY,
 	//PIN_TYPE_SUBCATEGORY,
 	//PIN_TYPE_SUBCATEGORY_OBJECT,
 	//PIN_TYPE_IS_ARRAY,
 	//PIN_TYPE_IS_REF,
 	NODE_MOVED,
-	NODE_COMMENT_CHANGED,
+	NODE_COMMENT,
 
 	// Currently only used when internal properties changed
 	// we can't resolve them, but would be nice to show when this is the case

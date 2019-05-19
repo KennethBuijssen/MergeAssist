@@ -635,7 +635,7 @@ void DiffR_LinkAdded(FMergeDiffResults& Results, const FLinkMatch& LinkMatch)
 void DiffR_PinDefaultChanged(FMergeDiffResults& Results, UEdGraphPin* OldPin, UEdGraphPin* NewPin)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type          = EMergeDiffType::PIN_DEFAULT_VALUE_CHANGED;
+	Diff.Type          = EMergeDiffType::PIN_DEFAULT_VALUE;
 	Diff.PinOld        = OldPin;
 	Diff.PinNew        = NewPin;
 
@@ -673,7 +673,7 @@ void DiffR_NodeMoved(FMergeDiffResults& Results, UEdGraphNode* OldNode, UEdGraph
 void DiffR_NodeCommentChanged(FMergeDiffResults& Results, UEdGraphNode* OldNode, UEdGraphNode* NewNode)
 {
 	FMergeDiffResult Diff = {};
-	Diff.Type    = EMergeDiffType::NODE_COMMENT_CHANGED;
+	Diff.Type    = EMergeDiffType::NODE_COMMENT;
 	Diff.NodeOld = OldNode;
 	Diff.NodeNew = NewNode;
 
