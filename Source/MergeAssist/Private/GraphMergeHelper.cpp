@@ -7,14 +7,19 @@
 
 #define LOCTEXT_NAMESPACE "GraphMergeHelper"
 
-#if 0
 static UEdGraphPin* SafeFindPin(UEdGraphNode* Node, UEdGraphPin* Pin)
 {
 	if (!Node || !Pin) return nullptr;
 
-	return Node->FindPin(Pin->PinName, Pin->Direction);
+	UEdGraphPin* FoundPin = Node->FindPin(Pin->PinName, Pin->Direction);
+
+	if (!FoundPin) return nullptr;
+
+	// Ensure that the pins also have the same type
+	if (Pin->PinType != FoundPin->PinType) return nullptr;
+
+	return FoundPin;
 }
-#endif
 
 static void CloneGraphIntoGraph(UEdGraph* FromGraph, UEdGraph* TargetGraph, TMap<UEdGraphNode*, UEdGraphNode*>& NodeMappingOut)
 {
@@ -326,6 +331,11 @@ UEdGraphNode* GraphMergeHelper::FindNodeInTargetGraph(UEdGraphNode* Node)
 		return Node;
 	}
 
+	// Check if the node is newly added, in this case we have a direct
+	// mapping between the node and target graph
+	auto** FoundNode = NewNodesInTargetGraph.Find(Node);
+	if (FoundNode) return *FoundNode;
+
 	// If the node is from either the Base, Local, or Remote graphs, translate
 	// it to a node on the base graph
 	UEdGraphNode* BaseNode = nullptr;
@@ -371,18 +381,15 @@ bool GraphMergeHelper::ApplyDiff(const FMergeDiffResult& Diff, const bool bCanWr
 {
 	switch (Diff.Type)
 	{
-		// @TODO: Update these
-#if 0
-	case EDiffType::NODE_REMOVED:         return ApplyDiff_NODE_REMOVED(Diff, bCanWrite);
-	case EDiffType::NODE_ADDED:           return ApplyDiff_NODE_ADDED(Diff, bCanWrite);
-	case EDiffType::PIN_LINKEDTO_NUM_DEC: return ApplyDiff_PIN_LINKEDTO_NUM_DEC(Diff, bCanWrite);
-	case EDiffType::PIN_LINKEDTO_NUM_INC: return ApplyDiff_PIN_LINKEDTO_NUM_INC(Diff, bCanWrite);
-	case EDiffType::PIN_DEFAULT_VALUE:    return ApplyDiff_PIN_DEFAULT_VALUE(Diff, bCanWrite);
-	case EDiffType::PIN_LINKEDTO_NODE:    return ApplyDiff_PIN_LINKEDTO_NODE(Diff, bCanWrite);
-	case EDiffType::NODE_MOVED:           return ApplyDiff_NODE_MOVED(Diff, bCanWrite);
-	case EDiffType::NODE_COMMENT:         return ApplyDiff_NODE_COMMENT(Diff, bCanWrite);
-#endif
-	case EMergeDiffType::NO_DIFFERENCE: // Remove this once we have another one implemented
+	case EMergeDiffType::NODE_REMOVED:      return ApplyDiff_NODE_REMOVED     (Diff, bCanWrite);
+	case EMergeDiffType::NODE_ADDED:        return ApplyDiff_NODE_ADDED       (Diff, bCanWrite);
+	//case EMergeDiffType::PIN_REMOVED:       return ApplyDiff_PIN_REMOVED      (Diff, bCanWrite);
+	//case EMergeDiffType::PIN_ADDED:         return ApplyDiff_PIN_ADDED        (Diff, bCanWrite);
+	case EMergeDiffType::LINK_REMOVED:      return ApplyDiff_LINK_REMOVED     (Diff, bCanWrite);
+	case EMergeDiffType::LINK_ADDED:        return ApplyDiff_LINK_ADDED       (Diff, bCanWrite);
+	case EMergeDiffType::PIN_DEFAULT_VALUE: return ApplyDiff_PIN_DEFAULT_VALUE(Diff, bCanWrite);
+	case EMergeDiffType::NODE_MOVED:        return ApplyDiff_NODE_MOVED       (Diff, bCanWrite);
+	case EMergeDiffType::NODE_COMMENT:      return ApplyDiff_NODE_COMMENT     (Diff, bCanWrite);
 	default: return false;
 	}
 }
@@ -391,23 +398,20 @@ bool GraphMergeHelper::RevertDiff(const FMergeDiffResult& Diff, const bool bCanW
 {
 	switch (Diff.Type)
 	{
-		// @TODO: Update these
-#if 0
-	case EDiffType::NODE_REMOVED:         return RevertDiff_NODE_REMOVED(Diff, bCanWrite);
-	case EDiffType::NODE_ADDED:           return RevertDiff_NODE_ADDED(Diff, bCanWrite);
-	case EDiffType::PIN_LINKEDTO_NUM_DEC: return RevertDiff_PIN_LINKEDTO_NUM_DEC(Diff, bCanWrite);
-	case EDiffType::PIN_LINKEDTO_NUM_INC: return RevertDiff_PIN_LINKEDTO_NUM_INC(Diff, bCanWrite);
-	case EDiffType::PIN_DEFAULT_VALUE:    return RevertDiff_PIN_DEFAULT_VALUE(Diff, bCanWrite);
-	case EDiffType::PIN_LINKEDTO_NODE:    return RevertDiff_PIN_LINKEDTO_NODE(Diff, bCanWrite);
-	case EDiffType::NODE_MOVED:           return RevertDiff_NODE_MOVED(Diff, bCanWrite);
-	case EDiffType::NODE_COMMENT:         return RevertDiff_NODE_COMMENT(Diff, bCanWrite);
-#endif
-	case EMergeDiffType::NO_DIFFERENCE: // Remove this once we have another one implemented
+	case EMergeDiffType::NODE_REMOVED:      return RevertDiff_NODE_REMOVED     (Diff, bCanWrite);
+	case EMergeDiffType::NODE_ADDED:        return RevertDiff_NODE_ADDED       (Diff, bCanWrite);
+	//case EMergeDiffType::PIN_REMOVED:       return RevertDiff_PIN_REMOVED      (Diff, bCanWrite);
+	//case EMergeDiffType::PIN_ADDED:         return RevertDiff_PIN_ADDED        (Diff, bCanWrite);
+	case EMergeDiffType::LINK_REMOVED:      return RevertDiff_LINK_REMOVED     (Diff, bCanWrite);
+	case EMergeDiffType::LINK_ADDED:        return RevertDiff_LINK_ADDED       (Diff, bCanWrite);
+	case EMergeDiffType::PIN_DEFAULT_VALUE: return RevertDiff_PIN_DEFAULT_VALUE(Diff, bCanWrite);
+	case EMergeDiffType::NODE_MOVED:        return RevertDiff_NODE_MOVED       (Diff, bCanWrite);
+	case EMergeDiffType::NODE_COMMENT:      return RevertDiff_NODE_COMMENT     (Diff, bCanWrite);
 	default: return false;
 	}
 }
 
-bool GraphMergeHelper::CloneToTarget(UEdGraphNode* SourceNode, bool bRestoreLinks, bool CanWrite, UEdGraphNode** OutNewNode)
+bool GraphMergeHelper::CloneToTarget(UEdGraphNode* SourceNode, bool bRestoreLinks, const bool CanWrite, UEdGraphNode** OutNewNode)
 {
 	// Make sure we have a source node we need to copy
 	// and that this node does not already exist in the target graph
@@ -486,334 +490,101 @@ bool GraphMergeHelper::CloneToTarget(UEdGraphNode* SourceNode, bool bRestoreLink
 	return true;
 }
 
-#if 0
-/*****************************
- * ApplyDiff implementations *
- ****************************/
-bool GraphMergeHelper::ApplyDiff_NODE_REMOVED(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::ApplyDiff_NODE_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Node1);
-		
-	if (!TargetNode) return false;		
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.NodeOld);
+
+	if (!TargetNode) return false;
 
 	if (bCanWrite)
 	{
 		TargetNode->BreakAllNodeLinks();
 		TargetGraph->RemoveNode(TargetNode);
-		BaseToTargetNodeMap.Remove(Diff.Node1);
+		BaseToTargetNodeMap.Remove(Diff.NodeOld);
 	}
 
 	return true;
 }
 
-bool GraphMergeHelper::ApplyDiff_NODE_ADDED(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::ApplyDiff_NODE_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	// Update the mapping to reflect our new node
-	UEdGraphNode* NewNode = nullptr;
-	bool Ret = CloneToTarget(Diff.Node1, true, bCanWrite, &NewNode);
-	if (NewNode && bCanWrite)
-	{
-		BaseToTargetNodeMap.Add(Diff.Node1, NewNode);
-	}
-
-	return Ret;
-}
-
-bool GraphMergeHelper::ApplyDiff_PIN_LINKEDTO_NUM_DEC(const FDiffSingleResult& Diff, const bool bCanWrite)
-{
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Pin1->GetOwningNode());
-	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.Pin1);
-
-	if (!TargetPin) return false;
-
-	TArray<UEdGraphPin*> LinksToRemove;
-
-	// Find all links to remove, these are all the links from
-	// the target pin, which do not exist in Pin2
-	for (auto* LinkedPin : TargetPin->LinkedTo)
-	{
-		bool LinkFoundInPin2 = false;
-
-		for (auto* SourceLink : Diff.Pin2->LinkedTo)
-		{
-			// We say that pins are the same if they and their parents have the same name
-			if (LinkedPin->PinName == SourceLink->PinName
-				&& LinkedPin->Direction == SourceLink->Direction
-				&& LinkedPin->GetOwningNode()->GetName() == SourceLink->GetOwningNode()->GetName())
-			{
-				LinkFoundInPin2 = true;
-				break;
-			}
-		}
-
-		if (!LinkFoundInPin2)
-		{
-			LinksToRemove.Add(LinkedPin);
-		}
-	}
-
-	if (bCanWrite)
-	{
-		for (auto* LinkToRemove : LinksToRemove)
-		{
-			TargetPin->BreakLinkTo(LinkToRemove);
-		}	
-	}
-
-	return true;
-}
-
-bool GraphMergeHelper::ApplyDiff_PIN_LINKEDTO_NUM_INC(const FDiffSingleResult& Diff, const bool bCanWrite)
-{
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Pin1->GetOwningNode());
-	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.Pin1);
-
-	if (!TargetPin) return false;
-
-	// Add any missing links from the base pin to to target pin
-	for (auto* SourceLink : Diff.Pin2->LinkedTo)
-	{
-		UEdGraphNode* TargetLinkNode = FindNodeInTargetGraph(SourceLink->GetOwningNode());
-		UEdGraphPin* TargetLink = SafeFindPin(TargetLinkNode, SourceLink);
-
-		if (!TargetLink) 
-		{
-			return false;
-		}
-
-		if (TargetLink && !TargetPin->LinkedTo.Contains(TargetLink))
-		{
-			if (bCanWrite)
-			{
-				TargetPin->MakeLinkTo(TargetLink);	
-			}
-		}
-	}
-
-	return true;
-}
-
-bool GraphMergeHelper::ApplyDiff_PIN_DEFAULT_VALUE(const FDiffSingleResult& Diff, const bool bCanWrite)
-{
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Pin1->GetOwningNode());
-	UEdGraphPin* TargetPin = TargetNode->FindPin(Diff.Pin1->PinName, Diff.Pin1->Direction);
-
-	if (!TargetNode || !TargetPin) return false;
-
-	if (bCanWrite)
-	{
-		// Copy all the values to the target pin
-		// Only one of these values will be set, however the other 
-		// values should be safe to copy, since they are initialized 
-		// to zero values
-		TargetPin->DefaultValue = Diff.Pin2->DefaultValue;
-		TargetPin->DefaultObject = Diff.Pin2->DefaultObject;
-		TargetPin->DefaultTextValue = Diff.Pin2->DefaultTextValue;	
-	}
-
-	return true;
-}
-
-bool GraphMergeHelper::ApplyDiff_PIN_LINKEDTO_NODE(const FDiffSingleResult& Diff, const bool bCanWrite)
-{
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Pin1->GetOwningNode());
-	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.Pin1);
-
-	if (!TargetNode || !TargetPin) return false;
-
-	// PIN_LINKEDTO_NODE assumes that the numbers of pins didn't change
-	// this is a requirement for the diff to be generated. If this
-	// doesn't hold true (for example because the user manually added a link
-	// in the target graph) we can no longer determine which of the links has 
-	// changed
-	if(Diff.Pin1->LinkedTo.Num() != Diff.Pin2->LinkedTo.Num()
-		|| Diff.Pin1->LinkedTo.Num() != TargetPin->LinkedTo.Num()) return false;
-
-	// NOTE: If we can't find any links that changed we cannot apply them
-	// We also only look at the first link that changed, this is 
-	// since we do not have enough information to differentiate between the 
-	// different links
-
-	// Try to find the links that changed
-	for (int i = 0; i < Diff.Pin1->LinkedTo.Num(); ++i)
-	{
-		UEdGraphPin* Pin1Link = Diff.Pin1->LinkedTo[i];
-		UEdGraphPin* Pin2Link = Diff.Pin2->LinkedTo[i];
-
-		// Skip unchanged links
-		if (Pin1Link->PinName == Pin2Link->PinName
-			&& Pin1Link->GetOwningNode()->GetName() == Pin2Link->GetOwningNode()->GetName())
-		{
-			continue;
-		}
-
-		// We found a pin that changed, now we need to find the matching target pin
-		UEdGraphNode* Pin1NodeInTarget = FindNodeInTargetGraph(Pin1Link->GetOwningNode());
-		UEdGraphNode* Pin2NodeInTarget = FindNodeInTargetGraph(Pin2Link->GetOwningNode());
-
-		UEdGraphPin* Pin1LinkInTarget = SafeFindPin(Pin1NodeInTarget, Pin1Link);
-		UEdGraphPin* Pin2LinkInTarget = SafeFindPin(Pin2NodeInTarget, Pin2Link);
-
-		// Ensure that the link target is found, if any of the link targets
-		// could not be found. We can't guarantee that the other matches
-		// would be correct
-		if (!Pin1LinkInTarget || !Pin2LinkInTarget) return false;
-
-		if (bCanWrite)
-		{
-			TargetPin->BreakLinkTo(Pin1LinkInTarget);
-			TargetPin->MakeLinkTo(Pin2LinkInTarget);
-		}
-
-		return true;
-	}
-
-	return false;
-}
-
-bool GraphMergeHelper::ApplyDiff_NODE_MOVED(const FDiffSingleResult& Diff, const bool bCanWrite)
-{
-	// !IMPORTANT: For NODE_MOVED and NODE_COMMENT Node2 refers to the node in the base graph
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Node2);
-
-	if (!TargetNode) return false;
-
-	if (bCanWrite)
-	{
-		TargetNode->NodePosX = Diff.Node1->NodePosX;
-		TargetNode->NodePosY = Diff.Node1->NodePosY;
-	}
-
-	return true;
-}
-
-bool GraphMergeHelper::ApplyDiff_NODE_COMMENT(const FDiffSingleResult& Diff, const bool bCanWrite)
-{
-	// !IMPORTANT: For NODE_MOVED and NODE_COMMENT Node2 refers to the node in the base graph
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Node2);
-
-	if (!TargetNode) return false;
-
-	if (bCanWrite)
-	{
-		TargetNode->NodeComment = Diff.Node1->NodeComment;
-	}
-
-	return true;
-}
-
-/******************************
- * RevertDiff implementations *
- *****************************/
-
-bool GraphMergeHelper::RevertDiff_NODE_REMOVED(const FDiffSingleResult& Diff, const bool bCanWrite)
-{
-	// Update the mapping to reflect our new node
-	UEdGraphNode* NewNode = nullptr;	
 	
-	bool Ret = CloneToTarget(Diff.Node1, true, bCanWrite, &NewNode);
+	UEdGraphNode* NewNode = nullptr;
+	
+	const bool Ret = CloneToTarget(Diff.NodeNew, true, bCanWrite, &NewNode);
 	if (NewNode && bCanWrite)
 	{
-		BaseToTargetNodeMap.Add(Diff.Node1, NewNode);
+		// Update the mapping to reflect our new node
+		NewNodesInTargetGraph.Add(Diff.NodeNew, NewNode);
 	}
 
 	return Ret;
 }
 
-bool GraphMergeHelper::RevertDiff_NODE_ADDED(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::ApplyDiff_PIN_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Node1);
-
-	if (!TargetNode) return false;
-
-	if (bCanWrite)
-	{
-		TargetNode->BreakAllNodeLinks();
-		TargetGraph->RemoveNode(TargetNode);
-		BaseToTargetNodeMap.Remove(Diff.Node1);
-	}
-
-	return true;
+	// @TODO: Implement
+	return false;
 }
 
-bool GraphMergeHelper::RevertDiff_PIN_LINKEDTO_NUM_DEC(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::ApplyDiff_PIN_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Pin1->GetOwningNode());
-	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.Pin1);
+	// @TODO: Implement
+	return false;
+}
+
+bool GraphMergeHelper::ApplyDiff_LINK_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.PinOld->GetOwningNode());
+	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.PinOld);
 
 	if (!TargetPin) return false;
 
-	// Add any missing links from the base pin to to target pin
-	for (auto* BaseLink : Diff.Pin1->LinkedTo)
+	UEdGraphPin** FoundLinkTarget = TargetPin->LinkedTo.FindByPredicate(
+		[Diff](UEdGraphPin* Pin)
 	{
-		UEdGraphNode* TargetLinkNode = GetBaseNodeInTargetGraph(BaseLink->GetOwningNode());
-		UEdGraphPin* TargetLink = SafeFindPin(TargetLinkNode, BaseLink);
+		return Pin 
+			&& Pin->PinName   == Diff.LinkTargetOld->PinName
+			&& Pin->Direction == Diff.LinkTargetOld->Direction
+			&& Pin->PinType   == Diff.LinkTargetOld->PinType;
+	});
 
-		if (!TargetLink) 
-		{
-			return false;
-		}
-
-		if (TargetLink && !TargetPin->LinkedTo.Contains(TargetLink))
-		{
-			if (bCanWrite)
-			{
-				TargetPin->MakeLinkTo(TargetLink);	
-			}
-		}
-	}
-
-	return true;
-}
-
-bool GraphMergeHelper::RevertDiff_PIN_LINKEDTO_NUM_INC(const FDiffSingleResult& Diff, const bool bCanWrite)
-{
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Pin1->GetOwningNode());
-	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.Pin1);
-
-	if (!TargetPin) return false;
-
-	TArray<UEdGraphPin*> LinksToRemove;
-
-	// Find all links to remove, these are all the links from
-	// the target pin, which do not exist in the base pin
-	for (auto* LinkedPin : TargetPin->LinkedTo)
-	{
-		bool LinkFoundInPin2 = false;
-
-		for (auto* BaseLink : Diff.Pin1->LinkedTo)
-		{
-			// We say that pins are the same if they and their parents have the same name
-			if (LinkedPin->PinName == BaseLink->PinName
-				&& LinkedPin->Direction == BaseLink->Direction
-				&& LinkedPin->GetOwningNode()->GetName() == BaseLink->GetOwningNode()->GetName())
-			{
-				LinkFoundInPin2 = true;
-				break;
-			}
-		}
-
-		if (!LinkFoundInPin2)
-		{
-			LinksToRemove.Add(LinkedPin);
-		}
-	}
+	// Check if we could find the link target in the target graph
+	if (!FoundLinkTarget) return false;
 
 	if (bCanWrite)
 	{
-		for (auto* LinkToRemove : LinksToRemove)
-		{
-			TargetPin->BreakLinkTo(LinkToRemove);
-		}	
+		TargetPin->BreakLinkTo(*FoundLinkTarget);
 	}
 
 	return true;
 }
 
-bool GraphMergeHelper::RevertDiff_PIN_DEFAULT_VALUE(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::ApplyDiff_LINK_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Pin1->GetOwningNode());
-	UEdGraphPin* TargetPin = TargetNode->FindPin(Diff.Pin1->PinName, Diff.Pin1->Direction);
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.PinOld->GetOwningNode());
+	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.PinOld);
+
+	if (!TargetPin) return false;
+
+	UEdGraphNode* LinkTargetNode = FindNodeInTargetGraph(Diff.LinkTargetNew->GetOwningNode());
+	UEdGraphPin* LinkTargetPin = SafeFindPin(LinkTargetNode, Diff.LinkTargetNew);
+
+	// Make sure the link target can be found in the target graph
+	if (!LinkTargetPin) return false;
+
+	if (bCanWrite)
+	{
+		TargetPin->MakeLinkTo(LinkTargetPin);
+	}
+
+	return true;
+}
+
+bool GraphMergeHelper::ApplyDiff_PIN_DEFAULT_VALUE(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.PinOld->GetOwningNode());
+	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.PinOld);
 
 	if (!TargetNode || !TargetPin) return false;
 
@@ -823,101 +594,182 @@ bool GraphMergeHelper::RevertDiff_PIN_DEFAULT_VALUE(const FDiffSingleResult& Dif
 		// Only one of these values will be set, however the other 
 		// values should be safe to copy, since they are initialized 
 		// to zero values
-		TargetPin->DefaultValue = Diff.Pin1->DefaultValue;
-		TargetPin->DefaultObject = Diff.Pin1->DefaultObject;
-		TargetPin->DefaultTextValue = Diff.Pin1->DefaultTextValue;	
+		TargetPin->DefaultValue = Diff.PinNew->DefaultValue;
+		TargetPin->DefaultObject = Diff.PinNew->DefaultObject;
+		TargetPin->DefaultTextValue = Diff.PinNew->DefaultTextValue;	
 	}
 
 	return true;
 }
 
-bool GraphMergeHelper::RevertDiff_PIN_LINKEDTO_NODE(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::ApplyDiff_NODE_MOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Pin1->GetOwningNode());
-	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.Pin1);
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.NodeOld);
 
-	if (!TargetNode || !TargetPin) return false;
+	if (!TargetNode) return false;
 
-	// PIN_LINKEDTO_NODE assumes that the numbers of pins didn't change
-	// this is a requirement for the diff to be generated. If this
-	// doesn't hold true (for example because the user manually added a link
-	// in the target graph) we can no longer determine which of the links has 
-	// changed
-	if(Diff.Pin1->LinkedTo.Num() != Diff.Pin2->LinkedTo.Num()
-		|| Diff.Pin1->LinkedTo.Num() != TargetPin->LinkedTo.Num()) return false;
-
-	// NOTE: If we can't find any links that changed we cannot apply them
-	// We also only look at the first link that changed, this is 
-	// since we do not have enough information to differentiate between the 
-	// different links
-
-	// Try to find the links that changed
-	for (int i = 0; i < Diff.Pin1->LinkedTo.Num(); ++i)
+	if (bCanWrite)
 	{
-		UEdGraphPin* Pin1Link = Diff.Pin1->LinkedTo[i];
-		UEdGraphPin* Pin2Link = Diff.Pin2->LinkedTo[i];
-
-		// Skip unchanged links
-		if (Pin1Link->PinName == Pin2Link->PinName
-			&& Pin1Link->GetOwningNode()->GetName() == Pin2Link->GetOwningNode()->GetName())
-		{
-			continue;
-		}
-
-		// We found a pin that changed, now we need to find the matching target pin
-		UEdGraphNode* Pin1NodeInTarget = FindNodeInTargetGraph(Pin1Link->GetOwningNode());
-		UEdGraphNode* Pin2NodeInTarget = FindNodeInTargetGraph(Pin2Link->GetOwningNode());
-
-		UEdGraphPin* Pin1LinkInTarget = SafeFindPin(Pin1NodeInTarget, Pin1Link);
-		UEdGraphPin* Pin2LinkInTarget = SafeFindPin(Pin2NodeInTarget, Pin2Link);
-
-		// Ensure that the link target is found, if any of the link targets
-		// could not be found. We can't guarantee that the other matches
-		// would be correct
-		if (!Pin1LinkInTarget || !Pin2LinkInTarget) return false;
-
-		if (bCanWrite)
-		{
-			TargetPin->BreakLinkTo(Pin2LinkInTarget);
-			TargetPin->MakeLinkTo(Pin1LinkInTarget);
-		}
-
-		return true;
+		TargetNode->NodePosX = Diff.NodeNew->NodePosX;
+		TargetNode->NodePosY = Diff.NodeNew->NodePosY;
 	}
 
+	return true;
+}
+
+bool GraphMergeHelper::ApplyDiff_NODE_COMMENT(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.NodeOld);
+
+	if (!TargetNode) return false;
+
+	if (bCanWrite)
+	{
+		TargetNode->NodeComment = Diff.NodeNew->NodeComment;
+	}
+
+	return true;
+}
+
+bool GraphMergeHelper::RevertDiff_NODE_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	UEdGraphNode* NewNode = nullptr;
+
+	const bool Ret = CloneToTarget(Diff.NodeOld, true, bCanWrite, &NewNode);
+	if (NewNode && bCanWrite)
+	{
+		// Update the mapping to reflect our new node
+		BaseToTargetNodeMap.Add(Diff.NodeOld, NewNode);
+	}
+
+	return Ret;
+}
+
+bool GraphMergeHelper::RevertDiff_NODE_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.NodeNew);
+
+	if (!TargetNode) return false;
+
+	if (bCanWrite)
+	{
+		TargetNode->BreakAllNodeLinks();
+		TargetGraph->RemoveNode(TargetNode);
+		BaseToTargetNodeMap.Remove(Diff.NodeNew);
+	}
+
+	return true;
+}
+
+bool GraphMergeHelper::RevertDiff_PIN_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	// @TODO: Implement
 	return false;
 }
 
-bool GraphMergeHelper::RevertDiff_NODE_MOVED(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::RevertDiff_PIN_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	// !IMPORTANT: For NODE_MOVED and NODE_COMMENT Node2 refers to the node in the base graph
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Node2);
+	// @TODO: Implement
+	return false;
+}
 
-	if (!TargetNode) return false;
+bool GraphMergeHelper::RevertDiff_LINK_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.PinOld->GetOwningNode());
+	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.PinOld);
+
+	if (!TargetPin) return false;
+
+	UEdGraphNode* LinkTargetNode = GetBaseNodeInTargetGraph(Diff.LinkTargetOld->GetOwningNode());
+	UEdGraphPin* LinkTargetPin = SafeFindPin(LinkTargetNode, Diff.LinkTargetOld);
+
+	// Make sure the link target can be found in the target graph
+	if (!LinkTargetPin) return false;
 
 	if (bCanWrite)
 	{
-		TargetNode->NodePosX = Diff.Node2->NodePosX;
-		TargetNode->NodePosY = Diff.Node2->NodePosY;
+		TargetPin->MakeLinkTo(LinkTargetPin);
 	}
 
 	return true;
 }
 
-bool GraphMergeHelper::RevertDiff_NODE_COMMENT(const FDiffSingleResult& Diff, const bool bCanWrite)
+bool GraphMergeHelper::RevertDiff_LINK_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	// !IMPORTANT: For NODE_MOVED and NODE_COMMENT Node2 refers to the node in the base graph
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.Node2);
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.PinOld->GetOwningNode());
+	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.PinOld);
+
+	if (!TargetPin) return false;
+
+	UEdGraphPin** FoundLinkTarget = TargetPin->LinkedTo.FindByPredicate(
+		[Diff](UEdGraphPin* Pin)
+	{
+		return Pin 
+			&& Pin->PinName   == Diff.LinkTargetNew->PinName
+			&& Pin->Direction == Diff.LinkTargetNew->Direction
+			&& Pin->PinType   == Diff.LinkTargetNew->PinType;
+	});
+
+	// Check if we could find the link target in the target graph
+	if (!FoundLinkTarget) return false;
+
+	if (bCanWrite)
+	{
+		TargetPin->BreakLinkTo(*FoundLinkTarget);
+	}
+
+	return true;
+}
+
+bool GraphMergeHelper::RevertDiff_PIN_DEFAULT_VALUE(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.PinOld->GetOwningNode());
+	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.PinOld);
+
+	if (!TargetNode || !TargetPin) return false;
+
+	if (bCanWrite)
+	{
+		// Copy all the values to the target pin
+		// Only one of these values will be set, however the other 
+		// values should be safe to copy, since they are initialized 
+		// to zero values
+		TargetPin->DefaultValue = Diff.PinOld->DefaultValue;
+		TargetPin->DefaultObject = Diff.PinOld->DefaultObject;
+		TargetPin->DefaultTextValue = Diff.PinOld->DefaultTextValue;	
+	}
+
+	return true;
+}
+
+bool GraphMergeHelper::RevertDiff_NODE_MOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.NodeOld);
 
 	if (!TargetNode) return false;
 
 	if (bCanWrite)
 	{
-		TargetNode->NodeComment = Diff.Node2->NodeComment;
+		TargetNode->NodePosX = Diff.NodeOld->NodePosX;
+		TargetNode->NodePosY = Diff.NodeOld->NodePosY;
 	}
 
 	return true;
 }
-#endif
+
+bool GraphMergeHelper::RevertDiff_NODE_COMMENT(const FMergeDiffResult& Diff, const bool bCanWrite)
+{
+	// !IMPORTANT: For NODE_MOVED and NODE_COMMENT Node2 refers to the node in the base graph
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.NodeOld);
+
+	if (!TargetNode) return false;
+
+	if (bCanWrite)
+	{
+		TargetNode->NodeComment = Diff.NodeOld->NodeComment;
+	}
+
+	return true;
+}
 
 #undef LOCTEXT_NAMESPACE

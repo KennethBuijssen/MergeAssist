@@ -66,7 +66,7 @@ private:
 	bool ApplyDiff(const FMergeDiffResult& Diff, const bool bCanWrite);
 	bool RevertDiff(const FMergeDiffResult& Diff, const bool bCanWrite);
 
-	bool CloneToTarget(UEdGraphNode* SourceNode, bool bRestoreLinks, bool CanWrite, UEdGraphNode** OutNewNode = nullptr);
+	bool CloneToTarget(UEdGraphNode* SourceNode, bool bRestoreLinks, const bool CanWrite, UEdGraphNode** OutNewNode = nullptr);
 
 	// Graphs
 	UEdGraph* const RemoteGraph;
@@ -84,31 +84,28 @@ private:
 	TMap<UEdGraphNode*, UEdGraphNode*> RemoteToBaseNodeMap;
 	TMap<UEdGraphNode*, UEdGraphNode*> LocalToBaseNodeMap;
 
-#if 0
-	bool ApplyDiff_NODE_REMOVED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool ApplyDiff_NODE_ADDED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool ApplyDiff_PIN_REMOVED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool ApplyDiff_PIN_ADDED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	//bool ApplyDiff_PIN_LINKEDTO_NUM_DEC(const FDiffSingleResult& Diff, const bool bCanWrite);
-	//bool ApplyDiff_PIN_LINKEDTO_NUM_INC(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool ApplyDiff_LINK_ADDED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool ApplyDiff_LINK_REMOVED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool ApplyDiff_PIN_DEFAULT_VALUE(const FDiffSingleResult& Diff, const bool bCanWrite);
-	//bool ApplyDiff_PIN_LINKEDTO_NODE(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool ApplyDiff_NODE_MOVED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool ApplyDiff_NODE_COMMENT(const FDiffSingleResult& Diff, const bool bCanWrite);
+	// New nodes are an exception for this however, since they do not 
+	// exist in the base graph. So we directly map between these and 
+	// the target graph
+	TMap<UEdGraphNode*, UEdGraphNode*> NewNodesInTargetGraph;
 
-	bool RevertDiff_NODE_REMOVED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool RevertDiff_NODE_ADDED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool RevertDiff_PIN_REMOVED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool RevertDiff_PIN_ADDED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	//bool RevertDiff_PIN_LINKEDTO_NUM_DEC(const FDiffSingleResult& Diff, const bool bCanWrite);
-	//bool RevertDiff_PIN_LINKEDTO_NUM_INC(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool RevertDiff_LINK_ADDED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool RevertDiff_LINK_REMOVED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool RevertDiff_PIN_DEFAULT_VALUE(const FDiffSingleResult& Diff, const bool bCanWrite);
-	//bool RevertDiff_PIN_LINKEDTO_NODE(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool RevertDiff_NODE_MOVED(const FDiffSingleResult& Diff, const bool bCanWrite);
-	bool RevertDiff_NODE_COMMENT(const FDiffSingleResult& Diff, const bool bCanWrite);
-#endif
+	bool ApplyDiff_NODE_REMOVED     (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool ApplyDiff_NODE_ADDED       (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool ApplyDiff_PIN_REMOVED      (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool ApplyDiff_PIN_ADDED        (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool ApplyDiff_LINK_REMOVED     (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool ApplyDiff_LINK_ADDED       (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool ApplyDiff_PIN_DEFAULT_VALUE(const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool ApplyDiff_NODE_MOVED       (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool ApplyDiff_NODE_COMMENT     (const FMergeDiffResult& Diff, const bool bCanWrite);
+
+	bool RevertDiff_NODE_REMOVED     (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool RevertDiff_NODE_ADDED       (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool RevertDiff_PIN_REMOVED      (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool RevertDiff_PIN_ADDED        (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool RevertDiff_LINK_REMOVED     (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool RevertDiff_LINK_ADDED       (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool RevertDiff_PIN_DEFAULT_VALUE(const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool RevertDiff_NODE_MOVED       (const FMergeDiffResult& Diff, const bool bCanWrite);
+	bool RevertDiff_NODE_COMMENT     (const FMergeDiffResult& Diff, const bool bCanWrite);
 };
