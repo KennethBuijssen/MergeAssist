@@ -105,7 +105,6 @@ struct FMergeDiffResult
 
 	// Display data
 	FText DisplayString;
-	FText ToolTip;
 	FLinearColor DisplayColor;
 };
 

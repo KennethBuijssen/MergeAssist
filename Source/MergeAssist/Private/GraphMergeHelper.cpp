@@ -105,12 +105,12 @@ static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FMer
 			const FMergeDiffResult** ConflictingDiff = ConflictMap.Find(&Diff);
 
 			FText Label = !ConflictingDiff ? Diff.DisplayString :
-				FText::Format(LOCTEXT("ConflictIdentifier", "CONFLICT: {0} conflicts with {1}"), 
+				FText::Format(LOCTEXT("ConflictIdentifier", "CONFLICT: '{0}' conflicts with '{1}'"), 
 					(*ConflictingDiff)->DisplayString, Diff.DisplayString) ;
 
 			auto NewEntry = TSharedPtr<MergeGraphChange>(new MergeGraphChange());
 			NewEntry->Label = Label;
-			NewEntry->DisplayColor = ConflictingDiff ? SoftRed : SoftBlue;
+			NewEntry->DisplayColor = Diff.DisplayColor;
 
 			NewEntry->RemoteDiff = Diff;
 			NewEntry->LocalDiff = ConflictingDiff ? **ConflictingDiff : FMergeDiffResult{};
@@ -128,7 +128,7 @@ static TArray<TSharedPtr<MergeGraphChange>> GenerateChangeList(const TArray<FMer
 			{
 				auto NewEntry = TSharedPtr<MergeGraphChange>(new MergeGraphChange());
 				NewEntry->Label = Diff.DisplayString;
-				NewEntry->DisplayColor = SoftGreen;
+				NewEntry->DisplayColor = Diff.DisplayColor;
 	
 				NewEntry->RemoteDiff = FMergeDiffResult{};
 				NewEntry->LocalDiff = Diff;

@@ -517,6 +517,11 @@ bool FDiffHelper::WeakNodeMatch(UEdGraphNode* OldNode, UEdGraphNode* NewNode)
 * Static helper function implementations
 *******************************************************************************/
 
+static FText GetNodeTitle(const UEdGraphNode* Node)
+{
+	return Node->GetNodeTitle(ENodeTitleType::ListView);
+}
+
 void DiffR_NodeRemoved(FMergeDiffResults& Results, UEdGraphNode* NodeRemoved)
 {
 	FMergeDiffResult Diff = {};
@@ -526,10 +531,9 @@ void DiffR_NodeRemoved(FMergeDiffResults& Results, UEdGraphNode* NodeRemoved)
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
 	{
-		// @TODO: Generate proper display data
-		Diff.DisplayString = FText::FromString("NodeRemoved");
-		Diff.DisplayColor = FLinearColor::White;
-		Diff.ToolTip = FText();	
+		Diff.DisplayString = FText::FormatOrdered(
+			LOCTEXT("DDS_NodeRemoved", "Removed Node '{0}'"), GetNodeTitle(NodeRemoved));
+		Diff.DisplayColor = FLinearColor(1.f,0.4f,0.4f);
 	}
 
 	Results.Add(Diff);
@@ -537,7 +541,6 @@ void DiffR_NodeRemoved(FMergeDiffResults& Results, UEdGraphNode* NodeRemoved)
 
 void DiffR_NodeAdded(FMergeDiffResults& Results, UEdGraphNode* NodeAdded)
 {
-	// @TODO: Implement
 	FMergeDiffResult Diff = {};
 	Diff.Type    = EMergeDiffType::NODE_ADDED;
 	Diff.NodeNew = NodeAdded;
@@ -545,10 +548,9 @@ void DiffR_NodeAdded(FMergeDiffResults& Results, UEdGraphNode* NodeAdded)
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
 	{
-		// @TODO: Generate proper display data
-		Diff.DisplayString = FText::FromString("NodeAdded");
-		Diff.DisplayColor = FLinearColor::White;
-		Diff.ToolTip = FText();	
+		Diff.DisplayString = FText::FormatOrdered(
+			LOCTEXT("DDS_NodeAdded", "Added Node '{0}'"), GetNodeTitle(NodeAdded));
+		Diff.DisplayColor = FLinearColor(0.3f,1.0f,0.4f);
 	}
 
 	Results.Add(Diff);
@@ -563,10 +565,10 @@ void DiffR_PinRemoved(FMergeDiffResults& Results, UEdGraphPin* OldPin)
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
 	{
-		// @TODO: Generate proper display data
-		Diff.DisplayString = FText::FromString("PinRemoved");
-		Diff.DisplayColor = FLinearColor::White;
-		Diff.ToolTip = FText();	
+		Diff.DisplayString = FText::FormatOrdered(
+			LOCTEXT("DDS_PinRemoved", "Removed Pin '{0}' from '{1}'"), OldPin->GetDisplayName(), GetNodeTitle(OldPin->GetOwningNode()));
+		Diff.DisplayString = FText::FromString("Removed Pin: ");
+		Diff.DisplayColor = FLinearColor(0.45f,0.4f,0.4f);
 	}
 
 	Results.Add(Diff);
@@ -581,10 +583,9 @@ void DiffR_PinAdded(FMergeDiffResults& Results, UEdGraphPin* NewPin)
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
 	{
-		// @TODO: Generate proper display data
-		Diff.DisplayString = FText::FromString("PinAdded");
-		Diff.DisplayColor = FLinearColor::White;
-		Diff.ToolTip = FText();	
+		Diff.DisplayString = FText::FormatOrdered(
+			LOCTEXT("DDS_PinAdded", "Added Pin '{0}' to '{1}'"), NewPin->GetDisplayName(), GetNodeTitle(NewPin->GetOwningNode()));
+		Diff.DisplayColor = FLinearColor(0.45f,0.4f,0.4f);
 	}
 
 	Results.Add(Diff);
@@ -602,10 +603,9 @@ void DiffR_LinkRemoved(FMergeDiffResults& Results, const FLinkMatch& LinkMatch)
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
 	{
-		// @TODO: Generate proper display data
-		Diff.DisplayString = FText::FromString("LinkRemoved");
-		Diff.DisplayColor = FLinearColor::White;
-		Diff.ToolTip = FText();	
+		Diff.DisplayString = FText::FormatOrdered(LOCTEXT("DDS_LinkRemoved", "Removed Link from '{0}' to {1}"), 
+			GetNodeTitle(Diff.PinOld->GetOwningNode()), GetNodeTitle(Diff.LinkTargetOld->GetOwningNode()));
+		Diff.DisplayColor = FLinearColor(0.5f,0.3f,0.85f);
 	}
 
 	Results.Add(Diff);
@@ -623,10 +623,9 @@ void DiffR_LinkAdded(FMergeDiffResults& Results, const FLinkMatch& LinkMatch)
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
 	{
-		// @TODO: Generate proper display data
-		Diff.DisplayString = FText::FromString("LinkAdded");
-		Diff.DisplayColor = FLinearColor::White;
-		Diff.ToolTip = FText();	
+		Diff.DisplayString = FText::FormatOrdered(LOCTEXT("DDS_LinkAdded", "Added Link from '{0}' to {1}"), 
+			GetNodeTitle(Diff.PinNew->GetOwningNode()), GetNodeTitle(Diff.LinkTargetNew->GetOwningNode()));
+		Diff.DisplayColor = FLinearColor(0.5f,0.3f,0.85f);
 	}
 
 	Results.Add(Diff);
@@ -642,10 +641,9 @@ void DiffR_PinDefaultChanged(FMergeDiffResults& Results, UEdGraphPin* OldPin, UE
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
 	{
-		// @TODO: Generate proper display data
-		Diff.DisplayString = FText::FromString("PinDefaultValue");
-		Diff.DisplayColor = FLinearColor::White;
-		Diff.ToolTip = FText();	
+		Diff.DisplayString = FText::FormatOrdered(LOCTEXT("DDS_PinDefaultChanged", "Pin Default '{0}' ['{1}' -> '{2}']")
+			, OldPin->GetDisplayName(), OldPin->GetDefaultAsText(), NewPin->GetDefaultAsText());
+		Diff.DisplayColor = FLinearColor(0.665f,0.13f,0.455f);
 	}
 
 	Results.Add(Diff);
@@ -661,10 +659,8 @@ void DiffR_NodeMoved(FMergeDiffResults& Results, UEdGraphNode* OldNode, UEdGraph
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
 	{
-		// @TODO: Generate proper display data
-		Diff.DisplayString = FText::FromString("NodeMoved");
-		Diff.DisplayColor = FLinearColor::White;
-		Diff.ToolTip = FText();	
+		Diff.DisplayString = FText::FormatOrdered(LOCTEXT("DDS_NodeMoved", "Moved Node '{0}'"), GetNodeTitle(OldNode));
+		Diff.DisplayColor = FLinearColor(0.9f, 0.84f, 0.43f);
 	}
 
 	Results.Add(Diff);
@@ -680,10 +676,8 @@ void DiffR_NodeCommentChanged(FMergeDiffResults& Results, UEdGraphNode* OldNode,
 	// Only generate the display data if it will be stored
 	if (Results.CanStoreResults())
 	{
-		// @TODO: Generate proper display data
-		Diff.DisplayString = FText::FromString("NodeCommentChanged");
-		Diff.DisplayColor = FLinearColor::White;
-		Diff.ToolTip = FText();	
+		Diff.DisplayString = FText::FormatOrdered(LOCTEXT("DDS_NodeCommentChanged", "Comment Changed Node '{0}'"), GetNodeTitle(OldNode));
+		Diff.DisplayColor = FLinearColor(0.25f,0.4f,0.5f);
 	}
 
 	Results.Add(Diff);
