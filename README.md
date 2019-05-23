@@ -30,7 +30,7 @@ Clone the project into `<ProjectDir/Plugins` if you don't have any project plugi
 needs to be created.
 
 Copy the following source files from `<UnrealDirectory>/Engine/Source/Developer/Merge/Private`
-to `<ProjectDir>/Plugins/MergeAssist/Private/Unreal`. By default the Unreal directory should be
+to `<ProjectDir>/Plugins/MergeAssist/Source/MergeAssist/Private/Unreal`. By default the Unreal directory should be
 `C:/Program Files/Epic Games/<version>/`.
 * MergeUtils.h
 * MergeUtils.cpp
@@ -38,5 +38,6 @@ to `<ProjectDir>/Plugins/MergeAssist/Private/Unreal`. By default the Unreal dire
 * SMergeAsssetPickerView.cpp
 
 Build the plugin, this can be done by either:
-* Open the project in the editor. Go to window -> developer tools -> modules. Search for `MergeAssist` in the list and select the compile option.
+* Restart the project in the unreal project. You will get a popup to build modules that are missing or build with a
+different engine version. Make sure that this list contains `MergeAssist` and select yes.
 * Regenerating the visual studio project for your unreal project, and building the project through visual studio.
