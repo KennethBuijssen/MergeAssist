@@ -23,11 +23,11 @@ public:
 	SLATE_END_ARGS()
 
 	/** Constructs this widget with InArgs */
-	void Construct(const FArguments& InArgs, const FBlueprintSelection& InData);
+	void Construct(const FArguments& InArgs, const FBlueprintMergeData& InData);
 
 private:
 	bool bIsPickingAssets = true; 
-	FBlueprintSelection Data;
+	FBlueprintMergeData Data;
 
 	/** UI Callbacks */
 	void OnToolbarNext();

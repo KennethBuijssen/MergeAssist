@@ -26,7 +26,7 @@ public:
 	SLATE_END_ARGS()
 
 	/** Constructs this widget with InArgs */
-	void Construct(const FArguments& InArgs, const FBlueprintSelection& Data, TSharedPtr<SBox> SideContainer);
+	void Construct(const FArguments& InArgs, const FBlueprintMergeData& Data, TSharedPtr<SBox> SideContainer);
 
 	void FocusGraph(FName GraphName);
 
@@ -59,7 +59,7 @@ private:
 		TSharedPtr<MergeGraphChange> Row, 
 		EMergeState ButtonId);
 
-	FBlueprintSelection Data;
+	FBlueprintMergeData Data;
 
 	TSharedPtr<FTabManager> TabManager;
 	TSharedRef<SDockTab> CreateMergeGraphTab(const FSpawnTabArgs& Args);

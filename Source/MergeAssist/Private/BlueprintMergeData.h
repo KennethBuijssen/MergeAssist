@@ -6,9 +6,9 @@
 
 class FBlueprintEditor;
 
-struct FBlueprintSelection
+struct FBlueprintMergeData
 {
-	FBlueprintSelection()
+	FBlueprintMergeData()
 		: BlueprintLocal(nullptr)
 		, RevisionLocal(FRevisionInfo::InvalidRevision())
 		, BlueprintBase(nullptr)
@@ -20,7 +20,7 @@ struct FBlueprintSelection
 		
 	}
 
-	FBlueprintSelection( 
+	FBlueprintMergeData( 
 		  const class UBlueprint* BlueprintLocal
 		, const class UBlueprint* BlueprintBase
 		, FRevisionInfo	          RevisionBase

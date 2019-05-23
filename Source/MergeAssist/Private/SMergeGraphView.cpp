@@ -205,7 +205,7 @@ void SMergeGraphView::NotifyStatus(bool IsSuccessful, const FText ErrorMessage)
 	}
 }
 
-void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintSelection& InData, TSharedPtr<SBox> SideContainer)
+void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeData& InData, TSharedPtr<SBox> SideContainer)
 {
 	Data = InData;
 

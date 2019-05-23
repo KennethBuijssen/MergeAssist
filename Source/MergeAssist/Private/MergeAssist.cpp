@@ -56,7 +56,7 @@ void FMergeAssistModule::GenerateMergeAssistWidget(UBlueprint* BaseBlueprint, UB
 {
 	//@TODO: Only open the widget if the content has already been generated before
 
-	FBlueprintSelection Data(
+	FBlueprintMergeData Data(
 		LocalBlueprint,
 		BaseBlueprint,
 		FRevisionInfo::InvalidRevision(),

@@ -17,7 +17,7 @@ BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
 #define LOCTEXT_NAMESPACE "SBlueprintMergeAssist"
 
-void SBlueprintMergeAssist::Construct(const FArguments& InArgs, const FBlueprintSelection& InData)
+void SBlueprintMergeAssist::Construct(const FArguments& InArgs, const FBlueprintMergeData& InData)
 {
 	Data = InData;
 
