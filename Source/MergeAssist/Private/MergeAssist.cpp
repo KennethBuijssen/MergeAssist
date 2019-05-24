@@ -15,33 +15,44 @@ public:
 	/** IModuleInterface implementation */
 	void StartupModule() override;
 	void ShutdownModule() override;
-
-	void GenerateMergeAssistWidget(UBlueprint* BaseBlueprint, UBlueprint* LocalBlueprint, UBlueprint* RemoteBlueprint, UBlueprint* TargetBlueprint) override;
 };
 
 void FMergeAssistModule::StartupModule()
 {
 	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
 
-	// Define a tab spawner that spawns an empty dock tab on purpose
-	// This allows us to later call InvokeTab() using our TabId to set the content.
-	const FOnSpawnTab TabSpawner = FOnSpawnTab::CreateStatic([](const FSpawnTabArgs&) { return SNew(SDockTab); });
+	// Define our tab spawner, which opens our merge UI with the test blueprints preselected
+	// this is done to speed up iteration time when testing and developing
+	const auto TabSpawner = FOnSpawnTab::CreateStatic([](const FSpawnTabArgs&)
+	{
+		auto* BaseBP = Cast<UBlueprint>(FStringAssetReference("/MergeAssist/BaseBP").TryLoad());
+		auto* LocalBP = Cast<UBlueprint>(FStringAssetReference("/MergeAssist/LocalBP").TryLoad());
+		auto* RemoteBP = Cast<UBlueprint>(FStringAssetReference("/MergeAssist/RemoteBP").TryLoad());
+		auto* TargetBP = Cast<UBlueprint>(FStringAssetReference("/MergeAssist/TargetBP").TryLoad());
+
+		FBlueprintMergeData Data(
+			LocalBP,
+			BaseBP,   FRevisionInfo::InvalidRevision(),
+			RemoteBP, FRevisionInfo::InvalidRevision(),
+			TargetBP
+		);
+
+		// Create a dock tab and fill it with the merge assist UI
+		return SNew(SDockTab)
+		[
+			SNew(SBlueprintMergeAssist, Data)
+		];
+	});
 
 	// Register our tab spawner
 	FTabSpawnerEntry& TabSpawnerEntry = FGlobalTabmanager::Get()->RegisterNomadTabSpawner(MergeAssistTabId, TabSpawner);
 
-	// Configer our tab spawner by adding a name and tooltip
+	// Configure our tab spawner by adding a name and tooltip
 	TabSpawnerEntry.SetDisplayName(LOCTEXT("TabTitle", "Merge Assist"));
-	TabSpawnerEntry.SetTooltipText(LOCTEXT("TooltipText", "Merge assistant main window"));
+	TabSpawnerEntry.SetTooltipText(LOCTEXT("TooltipText", "Open the Merge assist tool"));
 
-	// Preload the picking with some test values
-	UBlueprint* BaseBP = Cast<UBlueprint>(FStringAssetReference("/MergeAssist/BaseBP").TryLoad());
-	UBlueprint* LocalBP = Cast<UBlueprint>(FStringAssetReference("/MergeAssist/LocalBP").TryLoad());
-	UBlueprint* RemoteBP = Cast<UBlueprint>(FStringAssetReference("/MergeAssist/RemoteBP").TryLoad());
-	UBlueprint* TargetBP = Cast<UBlueprint>(FStringAssetReference("/MergeAssist/TargetBP").TryLoad());
-
-	// @TODO: Stop the window from opening by default, bind it to an menu item instead
-	GenerateMergeAssistWidget(BaseBP, LocalBP, RemoteBP, TargetBP);
+	// @TODO: Stop the tab from opening by default
+	FGlobalTabmanager::Get()->InvokeTab(MergeAssistTabId);
 }
 
 void FMergeAssistModule::ShutdownModule()
@@ -50,26 +61,6 @@ void FMergeAssistModule::ShutdownModule()
 	// we call this function before unloading the module.
 
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(MergeAssistTabId);
-}
-
-void FMergeAssistModule::GenerateMergeAssistWidget(UBlueprint* BaseBlueprint, UBlueprint* LocalBlueprint, UBlueprint* RemoteBlueprint, UBlueprint* TargetBlueprint)
-{
-	//@TODO: Only open the widget if the content has already been generated before
-
-	FBlueprintMergeData Data(
-		LocalBlueprint,
-		BaseBlueprint,
-		FRevisionInfo::InvalidRevision(),
-		RemoteBlueprint,
-		FRevisionInfo::InvalidRevision(),
-		TargetBlueprint
-	);
-
-	// Ensure that the widget is open
-	TSharedRef<SDockTab> Tab = FGlobalTabmanager::Get()->InvokeTab(MergeAssistTabId);
-
-	TSharedPtr<SWidget> TabContents = SNew(SBlueprintMergeAssist, Data);	
-	Tab->SetContent(TabContents.ToSharedRef());
 }
 
 #undef LOCTEXT_NAMESPACE

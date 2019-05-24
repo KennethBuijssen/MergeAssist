@@ -7,5 +7,5 @@ class UBlueprint;
 class IMergeAssistModule : public IModuleInterface
 {
 public:
-	virtual void GenerateMergeAssistWidget(UBlueprint* BaseBlueprint, UBlueprint* LocalBlueprint, UBlueprint* RemoteBlueprint, UBlueprint* TargetBlueprint) = 0;
+	// Expose any functions that can be called by other modules here
 };

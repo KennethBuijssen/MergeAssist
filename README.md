@@ -13,6 +13,7 @@ This plug-in was build and tested against __Unreal Engine 4.20__, other versions
 
 ## Usage
 After installing the plugin, the merge UI will automatically open when the editor is started.
+Alternativly the merge UI can be opened by selecting Window -> Merge Assist in the main menu.
 
 To merge a blueprint, select the versions of the blueprint you with to merge and click start merge.
 While the plug-in is in development the target blueprint will always be fixed to `MergeAssist/Content/TargetBP.uasset`, this is done to avoid any accidental overwriting of files.
