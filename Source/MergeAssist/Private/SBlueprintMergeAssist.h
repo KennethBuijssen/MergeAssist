@@ -63,5 +63,6 @@ private:
 
 	/** Different sub controls for the different stages of merging */
 	TSharedPtr<SWidget> AssetPickerControl;
-	TSharedPtr<class SMergeGraphView> GraphControl;
+	TSharedPtr<class SMergeTreeView> MergeTreeWidget;
+	TSharedPtr<class SMergeGraphView> GraphViewWidget;
 };

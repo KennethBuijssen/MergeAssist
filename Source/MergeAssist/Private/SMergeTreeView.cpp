@@ -5,7 +5,9 @@
 
 BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
-static TSharedRef<ITableRow> ChangeTreeOnGenerateRow(TSharedPtr<IMergeTreeEntry> Item, const TSharedRef<STableViewBase>& OwnerTable)
+static TSharedRef<ITableRow> ChangeTreeOnGenerateRow(
+	TSharedPtr<IMergeTreeEntry> Item, 
+	const TSharedRef<STableViewBase>& OwnerTable)
 {
 	return SNew(STableRow<TSharedPtr<FString>>, OwnerTable)
 	[
@@ -13,12 +15,14 @@ static TSharedRef<ITableRow> ChangeTreeOnGenerateRow(TSharedPtr<IMergeTreeEntry>
 	];
 }
 
-static void ChangeTreeOnSelectionChanged(TSharedPtr<IMergeTreeEntry> Item, ESelectInfo::Type SelectInfo, SMergeGraphView* MergeGraphView, TSharedPtr<IMergeTreeEntry>* SelectionOut)
+static void ChangeTreeOnSelectionChanged(TSharedPtr<IMergeTreeEntry> Item, 
+	ESelectInfo::Type SelectInfo, 
+	TSharedPtr<IMergeTreeEntry>* SelectionOut)
 {
 	if (SelectionOut) *SelectionOut = Item;
 	if (!Item) return;
 
-	Item->OnSelected(MergeGraphView);
+	Item->OnSelected();
 }
 
 static void ChangeTreeOnGetChildren(TSharedPtr<IMergeTreeEntry> Item,
@@ -27,14 +31,14 @@ static void ChangeTreeOnGetChildren(TSharedPtr<IMergeTreeEntry> Item,
 	Children = Item->Children;
 }
 
-void SMergeTreeView::Construct(const FArguments& InArgs, SMergeGraphView* GraphView)
+void SMergeTreeView::Construct(const FArguments& InArgs)
 {
 	Widget = SNew(STreeView<TSharedPtr<IMergeTreeEntry>>)
 		.ItemHeight(24)
 		.TreeItemsSource(&Data)
 		.SelectionMode(ESelectionMode::Single)
 		.OnGenerateRow_Static(&ChangeTreeOnGenerateRow)
-		.OnSelectionChanged_Static(&ChangeTreeOnSelectionChanged, GraphView, &SelectedEntry)
+		.OnSelectionChanged_Static(&ChangeTreeOnSelectionChanged, &SelectedEntry)
 		.OnGetChildren_Static(&ChangeTreeOnGetChildren);
 
 	ChildSlot

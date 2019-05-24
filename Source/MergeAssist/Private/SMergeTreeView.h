@@ -8,15 +8,13 @@
 
 #include "STreeView.h"
 
-class SMergeGraphView;
-
 struct IMergeTreeEntry
 {
 	virtual ~IMergeTreeEntry() = default;
 
 	// The actual functions doing the heavy lifting
 	virtual TSharedRef<SWidget> OnGenerateRow() = 0;
-	virtual void OnSelected(SMergeGraphView* GraphView) = 0;
+	virtual void OnSelected() = 0;
 
 	virtual bool ApplyRemote() { return false; }
 	virtual bool ApplyLocal()  { return false; }
@@ -25,9 +23,6 @@ struct IMergeTreeEntry
 	TArray<TSharedPtr<IMergeTreeEntry>> Children;
 };
 
-/**
- * 
- */
 class SMergeTreeView : public SCompoundWidget
 {
 public:
@@ -36,7 +31,7 @@ public:
 	SLATE_END_ARGS()
 
 	/** Constructs this widget with InArgs */
-	void Construct(const FArguments& InArgs, SMergeGraphView* GraphView);
+	void Construct(const FArguments& InArgs);
 
 	void Add(TSharedPtr<IMergeTreeEntry> TreeEntry);
 

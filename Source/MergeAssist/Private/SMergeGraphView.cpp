@@ -21,24 +21,33 @@ static const FName MergeGraphTabId = FName(TEXT("MergeGraphTab"));
 
 struct ChangeTreeEntryGraph : IMergeTreeEntry
 {
-	ChangeTreeEntryGraph(TSharedPtr<GraphMergeHelper> MergeHelper) : MergeHelper(MergeHelper) {}
+	ChangeTreeEntryGraph(
+		SMergeGraphView& GraphView, 
+		TSharedPtr<GraphMergeHelper> MergeHelper) 
+		: GraphView(GraphView)
+		, MergeHelper(MergeHelper) 
+	{}
 
 	TSharedRef<SWidget> OnGenerateRow() override;
-	void OnSelected(SMergeGraphView* GraphView) override;
+	void OnSelected() override;
 
+	SMergeGraphView& GraphView;
 	TSharedPtr<GraphMergeHelper> MergeHelper;
 };
 
 struct ChangeTreeEntryChange : IMergeTreeEntry
 {
 	ChangeTreeEntryChange(
+		SMergeGraphView& GraphView, 
 		TSharedPtr<GraphMergeHelper> MergeHelper, 
 		TSharedPtr<MergeGraphChange> Change) 
-	: MergeHelper(MergeHelper)
-	, Change(Change) {}
+		: GraphView(GraphView)
+		, MergeHelper(MergeHelper)
+		, Change(Change) 
+	{}
 
 	TSharedRef<SWidget> OnGenerateRow() override;
-	void OnSelected(SMergeGraphView* GraphView) override;
+	void OnSelected() override;
 
 	bool ApplyRemote() override
 	{
@@ -55,6 +64,7 @@ struct ChangeTreeEntryChange : IMergeTreeEntry
 		return MergeHelper->RevertChange(*Change);
 	}
 
+	SMergeGraphView& GraphView;
 	TSharedPtr<GraphMergeHelper> MergeHelper;
 	TSharedPtr<MergeGraphChange> Change;
 };
@@ -205,7 +215,7 @@ void SMergeGraphView::NotifyStatus(bool IsSuccessful, const FText ErrorMessage)
 	}
 }
 
-void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeData& InData, TSharedPtr<SBox> SideContainer)
+void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeData& InData, TSharedPtr<SMergeTreeView> MergeTreeWidget)
 {
 	Data = InData;
 
@@ -346,26 +356,18 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeD
 		]
 	];
 
-	// @TODO: should this be passed in as an argument?
-	MergeTreeWidget = SNew(SMergeTreeView, this);
-
 	// Add all of our changes to the merge tree
 	for (auto GraphHelper : GraphMergeHelpers)
 	{
-		auto GraphEntry = MakeShared<ChangeTreeEntryGraph>(GraphHelper);
+		auto GraphEntry = MakeShared<ChangeTreeEntryGraph>(*this, GraphHelper);
 
 		for (auto Change : GraphHelper->ChangeList)
 		{
-			GraphEntry->Children.Add(MakeShared<ChangeTreeEntryChange>(GraphHelper, Change));
+			GraphEntry->Children.Add(MakeShared<ChangeTreeEntryChange>(*this, GraphHelper, Change));
 		}
 
 		MergeTreeWidget->Add(GraphEntry);
 	}
-
-	// Setup the side bar to list the differences and show details
-	SideContainer->SetContent(
-		MergeTreeWidget.ToSharedRef()
-	);
 }
 
 void SMergeGraphView::FocusGraph(FName GraphName)
@@ -481,9 +483,9 @@ TSharedRef<SWidget> ChangeTreeEntryGraph::OnGenerateRow()
 	return SNew(STextBlock).Text(FText::FromName(MergeHelper->GraphName));
 }
 
-void ChangeTreeEntryGraph::OnSelected(SMergeGraphView* GraphView)
+void ChangeTreeEntryGraph::OnSelected()
 {
-	GraphView->FocusGraph(MergeHelper->GraphName);
+	GraphView.FocusGraph(MergeHelper->GraphName);
 }
 
 TSharedRef<SWidget> ChangeTreeEntryChange::OnGenerateRow()
@@ -527,10 +529,10 @@ TSharedRef<SWidget> ChangeTreeEntryChange::OnGenerateRow()
 	];
 }
 
-void ChangeTreeEntryChange::OnSelected(SMergeGraphView* GraphView)
+void ChangeTreeEntryChange::OnSelected()
 {
-	GraphView->FocusGraph(MergeHelper->GraphName);
-	GraphView->Highlight(*Change);
+	GraphView.FocusGraph(MergeHelper->GraphName);
+	GraphView.Highlight(*Change);
 }
 
 #undef LOCTEXT_NAMESPACE

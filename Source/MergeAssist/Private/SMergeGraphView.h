@@ -16,9 +16,6 @@ struct MergeGraphChange;
 class GraphMergeHelper;
 class SMergeTreeView;
 
-/**
- * 
- */
 class SMergeGraphView : public SCompoundWidget
 {
 public:
@@ -27,7 +24,7 @@ public:
 	SLATE_END_ARGS()
 
 	/** Constructs this widget with InArgs */
-	void Construct(const FArguments& InArgs, const FBlueprintMergeData& Data, TSharedPtr<SBox> SideContainer);
+	void Construct(const FArguments& InArgs, const FBlueprintMergeData& Data, TSharedPtr<SMergeTreeView> MergeTreeWidget);
 
 	void FocusGraph(FName GraphName);
 
@@ -35,8 +32,6 @@ public:
 	void HighlightClear();
 
 	void NotifyStatus(bool IsSuccessful, const FText ErrorMessage);
-
-	TSharedPtr<SMergeTreeView> MergeTreeWidget;
 
 private:
 	FBlueprintMergeData Data;

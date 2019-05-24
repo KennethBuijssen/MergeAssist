@@ -186,37 +186,37 @@ void SBlueprintMergeAssist::Construct(const FArguments& InArgs, const FBlueprint
 
 void SBlueprintMergeAssist::OnToolbarNext()
 {
-	GraphControl->MergeTreeWidget->OnToolBarNext();
+	if (MergeTreeWidget) MergeTreeWidget->OnToolBarNext();
 }
 
 void SBlueprintMergeAssist::OnToolbarPrev()
 {
-	GraphControl->MergeTreeWidget->OnToolBarPrev();
+	if (MergeTreeWidget) MergeTreeWidget->OnToolBarPrev();
 }
 
 void SBlueprintMergeAssist::OnToolbarNextConflict()
 {
-	GraphControl->MergeTreeWidget->OnToolBarNextConflict();
+	if (MergeTreeWidget) MergeTreeWidget->OnToolBarNextConflict();
 }
 
 void SBlueprintMergeAssist::OnToolbarPrevConflict()
 {
-	GraphControl->MergeTreeWidget->OnToolBarPrevConflict();
+	if (MergeTreeWidget) MergeTreeWidget->OnToolBarPrevConflict();
 }
 
 void SBlueprintMergeAssist::OnToolbarApplyRemote()
 {
-	GraphControl->MergeTreeWidget->OnToolbarApplyRemote();
+	if (MergeTreeWidget) MergeTreeWidget->OnToolbarApplyRemote();
 }
 
 void SBlueprintMergeAssist::OnToolbarApplyLocal()
 {
-	GraphControl->MergeTreeWidget->OnToolbarApplyLocal();
+	if (MergeTreeWidget) MergeTreeWidget->OnToolbarApplyLocal();
 }
 
 void SBlueprintMergeAssist::OnToolbarRevert()
 {
-	GraphControl->MergeTreeWidget->OnToolbarRevert();
+	if (MergeTreeWidget) MergeTreeWidget->OnToolbarRevert();
 }
 
 void SBlueprintMergeAssist::OnToolbarFinishMerge()
@@ -254,8 +254,9 @@ void SBlueprintMergeAssist::OnStartMerge()
 
 	// @TODO: Create a backup (and cancel functionality in case the user does not merge into a target BP)
 
-	GraphControl = SNew(SMergeGraphView, Data, SideContainer);
-	
+	MergeTreeWidget = SNew(SMergeTreeView);
+	GraphViewWidget = SNew(SMergeGraphView, Data, MergeTreeWidget);
+
 	bIsPickingAssets = false;
 	OnModeChanged();
 }
@@ -322,7 +323,8 @@ void SBlueprintMergeAssist::OnModeChanged()
 	}
 	else
 	{
-		MainContainer->SetContent(GraphControl.ToSharedRef());
+		MainContainer->SetContent(GraphViewWidget.ToSharedRef());
+		SideContainer->SetContent(MergeTreeWidget.ToSharedRef());
 	}
 }
 
