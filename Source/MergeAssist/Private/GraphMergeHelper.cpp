@@ -647,7 +647,7 @@ bool GraphMergeHelper::RevertDiff_NODE_REMOVED(const FMergeDiffResult& Diff, con
 
 bool GraphMergeHelper::RevertDiff_NODE_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.NodeNew);
+	UEdGraphNode* TargetNode = FindNodeInTargetGraph(Diff.NodeNew);
 
 	if (!TargetNode) return false;
 
