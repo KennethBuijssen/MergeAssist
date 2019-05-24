@@ -14,6 +14,7 @@ class FTabManager;
 enum struct EMergeState;
 struct MergeGraphChange;
 class GraphMergeHelper;
+class SMergeTreeView;
 
 /**
  * 
@@ -35,30 +36,9 @@ public:
 
 	void NotifyStatus(bool IsSuccessful, const FText ErrorMessage);
 
-	void OnToolBarPrev();
-	void OnToolBarNext();
-	void OnToolBarNextConflict();
-	void OnToolBarPrevConflict();
-
-	void OnToolbarApplyRemote();
-	void OnToolbarApplyLocal();
-	void OnToolbarRevert();
+	TSharedPtr<SMergeTreeView> MergeTreeWidget;
 
 private:
-	TSharedRef<ITableRow> DiffListWidgetGenerateListItems(
-		TSharedPtr<MergeGraphChange> Item,
-		const TSharedRef<STableViewBase>& OwnerTable);
-
-	void DiffListWidgetOnSelectionChanged(
-		TSharedPtr<MergeGraphChange> SelectedItem, 
-		ESelectInfo::Type SelectInfo, 
-		TSharedPtr<SBox> DetailContainer);
-
-	void OnMergeGraphChangeRadioChanged(
-		ECheckBoxState NewRadioState, 
-		TSharedPtr<MergeGraphChange> Row, 
-		EMergeState ButtonId);
-
 	FBlueprintMergeData Data;
 
 	TSharedPtr<FTabManager> TabManager;
@@ -71,13 +51,8 @@ private:
 	TSharedPtr<SBox> TargetGraphEditorContainer;
 	TSharedPtr<SGraphEditor> CurrentTargetGraphEditor;
 
-	TSharedPtr<SListView<TSharedPtr<GraphMergeHelper>>> GraphListWidget;
-	TSharedPtr<SListView<TSharedPtr<MergeGraphChange>>> DiffListWidget;
-	TSharedPtr<SBox> DetailWidget;
-
+	// @TODO: Formalize this
 	TSharedPtr<STextBlock> StatusWidget;
-		
-	TArray<FDiffPanel> DiffPanels;
 
-	TSharedPtr<MergeGraphChange> SelectedChange;
+	TArray<FDiffPanel> DiffPanels;
 };

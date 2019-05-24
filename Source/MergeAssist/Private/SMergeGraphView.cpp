@@ -11,12 +11,53 @@
 #include "BlueprintEditor.h"
 #include "BlueprintEditorUtils.h"
 #include "GraphMergeHelper.h"
+#include "SMergeTreeView.h"
 
 BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
 #define LOCTEXT_NAMESPACE "SMergeAssistGraphView"
 
 static const FName MergeGraphTabId = FName(TEXT("MergeGraphTab"));
+
+struct ChangeTreeEntryGraph : IMergeTreeEntry
+{
+	ChangeTreeEntryGraph(TSharedPtr<GraphMergeHelper> MergeHelper) : MergeHelper(MergeHelper) {}
+
+	TSharedRef<SWidget> OnGenerateRow() override;
+	void OnSelected(SMergeGraphView* GraphView) override;
+
+	TSharedPtr<GraphMergeHelper> MergeHelper;
+};
+
+struct ChangeTreeEntryChange : IMergeTreeEntry
+{
+	ChangeTreeEntryChange(
+		TSharedPtr<GraphMergeHelper> MergeHelper, 
+		TSharedPtr<MergeGraphChange> Change) 
+	: MergeHelper(MergeHelper)
+	, Change(Change) {}
+
+	TSharedRef<SWidget> OnGenerateRow() override;
+	void OnSelected(SMergeGraphView* GraphView) override;
+
+	bool ApplyRemote() override
+	{
+		return MergeHelper->ApplyRemoteChange(*Change);
+	}
+
+	bool ApplyLocal() override
+	{
+		return MergeHelper->ApplyLocalChange(*Change);
+	}
+
+	bool Revert() override
+	{
+		return MergeHelper->RevertChange(*Change);
+	}
+
+	TSharedPtr<GraphMergeHelper> MergeHelper;
+	TSharedPtr<MergeGraphChange> Change;
+};
 
 struct FBlueprintRevPair
 {
@@ -99,9 +140,6 @@ void SMergeGraphView::Highlight(MergeGraphChange& Change)
 		}
 	};
 
-	
-	
-
 	// Highlight the remote diff
 	HighlightPinOrNode(Change.RemoteDiff.PinOld, Change.RemoteDiff.NodeOld);
 	HighlightPinOrNode(Change.RemoteDiff.PinNew, Change.RemoteDiff.NodeNew);
@@ -151,44 +189,6 @@ void SMergeGraphView::HighlightClear()
 
 	// Also clear the selection on the target editor
 	if (CurrentTargetGraphEditor) CurrentTargetGraphEditor->ClearSelectionSet();
-}
-
-static FString GenerateDebugText(const MergeGraphChange& MergeEntry)
-{
-	auto const GenerateDetailTextForDiff = [](const FMergeDiffResult& Diff)
-	{
-		FString OutputString = Diff.DisplayString.ToString();
-
-		if (Diff.NodeOld) OutputString += "\nNode1: " + Diff.NodeOld->GetNodeTitle(ENodeTitleType::FullTitle).ToString();
-		if (Diff.PinOld) OutputString += "\nPin1: " + Diff.PinOld->GetName();
-
-		if (Diff.NodeNew) OutputString += "\nNode2: " + Diff.NodeNew->GetNodeTitle(ENodeTitleType::FullTitle).ToString();
-		if (Diff.PinNew) OutputString += "\nPin2: " + Diff.PinNew->GetName();
-		
-		return OutputString;
-	};
-
-	return "--- Debug info ---\n\n" 
-		+ MergeEntry.Label.ToString() 
-		+ "\nRemote:\n" + GenerateDetailTextForDiff(MergeEntry.RemoteDiff)
-		+ "\nLocal:\n" + GenerateDetailTextForDiff(MergeEntry.LocalDiff);
-}
-
-void SMergeGraphView::DiffListWidgetOnSelectionChanged(TSharedPtr<MergeGraphChange> SelectedItem, 
-	ESelectInfo::Type SelectInfo, TSharedPtr<SBox> DetailContainer)
-{
-	SelectedChange = SelectedItem;
-
-	if (!SelectedItem) return;
-
-	// Highlight the related nodes and pins in each of the previews
-
-	Highlight(*SelectedItem);
-
-	// Display the debug info for the change
-	DetailContainer->SetContent(
-		SNew(STextBlock).Text(FText::FromString(GenerateDebugText(*SelectedItem)))
-	);
 }
 
 void SMergeGraphView::NotifyStatus(bool IsSuccessful, const FText ErrorMessage)
@@ -325,26 +325,7 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeD
 		Panel.InitializeDiffPanel();
 	}
 
-	DetailWidget = SNew(SBox);
 	StatusWidget = SNew(STextBlock).Justification(ETextJustify::Right);
-
-	GraphListWidget = SNew(SListView<TSharedPtr<GraphMergeHelper>>)
-		.ItemHeight(24)
-		.ListItemsSource(&GraphMergeHelpers)
-		.SelectionMode(ESelectionMode::Single)
-		.OnGenerateRow_Static(&GraphListWidgetGenerateListItems)
-		.OnSelectionChanged_Static(&GraphListWidgetOnSelectionChanged, this);
-
-	// Bind the first graph merge helper to the current, so we can setup the DiffList
-	// we rebind this when we use FocusGraph to set a default graph
-	CurrentGraphMergeHelper = GraphMergeHelpers[0];
-
-	DiffListWidget = SNew(SListView<TSharedPtr<MergeGraphChange>>)
-		.ItemHeight(24)
-		.ListItemsSource(&CurrentGraphMergeHelper->ChangeList)
-		.SelectionMode(ESelectionMode::Single)
-		.OnSelectionChanged(this, &SMergeGraphView::DiffListWidgetOnSelectionChanged, DetailWidget)
-		.OnGenerateRow(this, &SMergeGraphView::DiffListWidgetGenerateListItems);
 
 	// Focus the first graph in the list by default, 
 	// this is to ensure that all UI elements are initialized
@@ -365,30 +346,33 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeD
 		]
 	];
 
+	// @TODO: should this be passed in as an argument?
+	MergeTreeWidget = SNew(SMergeTreeView, this);
+
+	// Add all of our changes to the merge tree
+	for (auto GraphHelper : GraphMergeHelpers)
+	{
+		auto GraphEntry = MakeShared<ChangeTreeEntryGraph>(GraphHelper);
+
+		for (auto Change : GraphHelper->ChangeList)
+		{
+			GraphEntry->Children.Add(MakeShared<ChangeTreeEntryChange>(GraphHelper, Change));
+		}
+
+		MergeTreeWidget->Add(GraphEntry);
+	}
+
 	// Setup the side bar to list the differences and show details
 	SideContainer->SetContent(
-		SNew(SSplitter)
-		.Orientation(Orient_Vertical)
-		+SSplitter::Slot()
-		.Value(0.1f)
-		[
-			GraphListWidget.ToSharedRef()
-		]
-		+SSplitter::Slot()
-		.Value(0.7f)
-		[
-			DiffListWidget.ToSharedRef()
-		]
-		+ SSplitter::Slot()
-		.Value(0.2f)
-		[
-			DetailWidget.ToSharedRef()
-		]
+		MergeTreeWidget.ToSharedRef()
 	);
 }
 
 void SMergeGraphView::FocusGraph(FName GraphName)
 {
+	// Only change if we focus a different graph
+	if (CurrentGraphMergeHelper && CurrentGraphMergeHelper->GraphName == GraphName) return;
+
 	// Setup the diff panels for the source graphs
 	UEdGraph* RemoteGraph = FindGraphByName(*DiffPanels[0].Blueprint, GraphName);
 	UEdGraph* BaseGraph = FindGraphByName(*DiffPanels[1].Blueprint, GraphName);
@@ -423,7 +407,6 @@ void SMergeGraphView::FocusGraph(FName GraphName)
 		if (MergeHelper->GraphName == GraphName)
 		{
 			CurrentGraphMergeHelper = MergeHelper;
-			DiffListWidget->SetListItemsSource(MergeHelper->ChangeList);
 			break;
 		}
 	}
@@ -461,127 +444,25 @@ TSharedRef<SDockTab> SMergeGraphView::CreateMergeGraphTab(const FSpawnTabArgs& A
 	];
 }
 
-/*************************************
- * Toolbar stuff
- ************************************/
-
-static int CurrentChangeIndex(SListView<TSharedPtr<MergeGraphChange>>& ListView, const TArray<TSharedPtr<MergeGraphChange>>& ChangeList)
-{
-	auto SelectedItems = ListView.GetSelectedItems();
-
-	if (SelectedItems.Num() == 0) return INDEX_NONE;
-
-	return ChangeList.IndexOfByKey(SelectedItems.Last());
-}
-
-void SMergeGraphView::OnToolBarPrev()
-{
-	if (!DiffListWidget || !CurrentGraphMergeHelper) return;
-
-	const auto ChangeIndex = CurrentChangeIndex(*DiffListWidget, CurrentGraphMergeHelper->ChangeList);
-	const auto NewIndex = ChangeIndex - 1;
-
-	if (!CurrentGraphMergeHelper->ChangeList.IsValidIndex(NewIndex)) return;
-
-	DiffListWidget->SetSelection(CurrentGraphMergeHelper->ChangeList[NewIndex]);
-}
-
-void SMergeGraphView::OnToolBarNext()
-{
-	if (!DiffListWidget || !CurrentGraphMergeHelper) return;
-
-	const auto ChangeIndex = CurrentChangeIndex(*DiffListWidget, CurrentGraphMergeHelper->ChangeList);
-	const auto NewIndex = ChangeIndex + 1;
-
-	if (!CurrentGraphMergeHelper->ChangeList.IsValidIndex(NewIndex)) return;
-
-	DiffListWidget->SetSelection(CurrentGraphMergeHelper->ChangeList[NewIndex]);
-}
-
-void SMergeGraphView::OnToolBarNextConflict()
-{
-	if (!DiffListWidget || !CurrentGraphMergeHelper) return;
-
-	const auto& ChangeList = CurrentGraphMergeHelper->ChangeList;
-	const auto ChangeIndex = CurrentChangeIndex(*DiffListWidget, ChangeList) + 1;
-
-	for (auto NewIndex = ChangeIndex; ChangeList.IsValidIndex(NewIndex); ++NewIndex)
-	{
-		if (ChangeList[NewIndex]->bHasConflicts)
-		{
-			DiffListWidget->SetSelection(ChangeList[NewIndex]);
-			return;
-		}
-	}
-}
-
-void SMergeGraphView::OnToolBarPrevConflict()
-{
-	if (!DiffListWidget || !CurrentGraphMergeHelper) return;
-
-	const auto& ChangeList = CurrentGraphMergeHelper->ChangeList;
-	const auto ChangeIndex = CurrentChangeIndex(*DiffListWidget, ChangeList) - 1;
-
-	for (auto NewIndex = ChangeIndex; ChangeList.IsValidIndex(NewIndex); --NewIndex)
-	{
-		if (ChangeList[NewIndex]->bHasConflicts)
-		{
-			DiffListWidget->SetSelection(ChangeList[NewIndex]);
-			return;
-		}
-	}
-}
-
-void SMergeGraphView::OnToolbarApplyRemote()
-{
-	if (!DiffListWidget || !CurrentGraphMergeHelper) return;
-	if (!SelectedChange.IsValid()) return;
-
-	const bool Ret = CurrentGraphMergeHelper->ApplyRemoteChange(*SelectedChange);
-	NotifyStatus(Ret, LOCTEXT("ErrorMessageToolbarApplyRemote", "Failed to apply remote change!."));
-}
-
-void SMergeGraphView::OnToolbarApplyLocal()
-{
-	if (!DiffListWidget || !CurrentGraphMergeHelper) return;
-	if (!SelectedChange.IsValid()) return;
-
-	const bool Ret = CurrentGraphMergeHelper->ApplyLocalChange(*SelectedChange);
-	NotifyStatus(Ret, LOCTEXT("ErrorMessageToolbarApplyLocal", "Failed to apply local change!."));
-}
-
-void SMergeGraphView::OnToolbarRevert()
-{
-	if (!DiffListWidget || !CurrentGraphMergeHelper) return;
-	if (!SelectedChange.IsValid()) return;
-
-	const bool Ret = CurrentGraphMergeHelper->RevertChange(*SelectedChange);
-	NotifyStatus(Ret, LOCTEXT("ErrorMessageToolbarRevert", "Failed to revert change!."));
-}
-
 static ECheckBoxState IsRadioChecked(TSharedPtr<MergeGraphChange> Row, EMergeState ButtonId)
 {
    return (Row->MergeState == ButtonId) 
 			? ECheckBoxState::Checked : ECheckBoxState::Unchecked;	
 }
 
-void SMergeGraphView::OnMergeGraphChangeRadioChanged(ECheckBoxState NewRadioState, 
-							TSharedPtr<MergeGraphChange> Row, 
-							EMergeState ButtonId)
+static void OnRadioChanged(ECheckBoxState NewRadioState, ChangeTreeEntryChange* ChangeEntry, EMergeState ButtonId)
 {
-    if (NewRadioState != ECheckBoxState::Checked) return;
+	if (NewRadioState != ECheckBoxState::Checked) return;
 
-	// Update the selection, since it's possible to change the button state 
-	// without selecting the matching row
-	DiffListWidget->SetSelection(Row);
-	SelectedChange = Row;
-	
 	switch (ButtonId)
 	{
-		case EMergeState::Remote: OnToolbarApplyRemote(); break;
-		case EMergeState::Base:   OnToolbarRevert();      break;
-		case EMergeState::Local:  OnToolbarApplyLocal();  break;
+		case EMergeState::Remote: ChangeEntry->ApplyRemote(); break;
+		case EMergeState::Base:   ChangeEntry->Revert();      break;
+		case EMergeState::Local:  ChangeEntry->ApplyLocal();  break;
 	}
+
+	// @TODO: Add status reporting
+	//NotifyStatus(Ret, LOCTEXT("ErrorMessageToolbarApplyRemote", "Failed to apply remote change!."));
 }
 
 static bool IsRadioEnabled(TSharedPtr<MergeGraphChange> Row, EMergeState ButtonId, TSharedPtr<GraphMergeHelper> MergeHelper)
@@ -595,64 +476,61 @@ static bool IsRadioEnabled(TSharedPtr<MergeGraphChange> Row, EMergeState ButtonI
 	}
 }
 
-TSharedRef<ITableRow> SMergeGraphView::DiffListWidgetGenerateListItems(TSharedPtr<MergeGraphChange> Item,
-	const TSharedRef<STableViewBase>& OwnerTable)
+TSharedRef<SWidget> ChangeTreeEntryGraph::OnGenerateRow()
 {
-	const auto CreateCheckbox = [this, Item](EMergeState ButtonType, FLinearColor Color)
-	{
-		auto CheckBox = SNew(SCheckBox)
-			.Type(ESlateCheckBoxType::CheckBox)
-			.ForegroundColor(Color)
-			.IsChecked_Static(&IsRadioChecked, Item, ButtonType)
-			.OnCheckStateChanged(this, &SMergeGraphView::OnMergeGraphChangeRadioChanged, Item, ButtonType)
-			.IsEnabled_Static(&IsRadioEnabled, Item, ButtonType, CurrentGraphMergeHelper);
-			
-		return CheckBox;
-	};
+	return SNew(STextBlock).Text(FText::FromName(MergeHelper->GraphName));
+}
 
-	const auto CreateSpacer = []()
+void ChangeTreeEntryGraph::OnSelected(SMergeGraphView* GraphView)
+{
+	GraphView->FocusGraph(MergeHelper->GraphName);
+}
+
+TSharedRef<SWidget> ChangeTreeEntryChange::OnGenerateRow()
+{
+	const auto CreateCheckbox = 
+		[this](FMergeDiffResult* DiffResult, EMergeState ButtonType, FLinearColor Color)
 	{
-		return SNew(SCheckBox)
+		// Use an invisible checkbox to indicate that there is no change
+		if (DiffResult && DiffResult->Type == EMergeDiffType::NO_DIFFERENCE)
+		{
+			return SNew(SCheckBox)
 			.ForegroundColor(FSlateColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.0f)))
 			.BorderBackgroundColor(FSlateColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.0f)))
 			.IsEnabled(false);
+		}
+
+		return SNew(SCheckBox)
+			.Type(ESlateCheckBoxType::CheckBox)
+			.ForegroundColor(Color)
+			.IsChecked_Static(&IsRadioChecked, Change, ButtonType)
+			.OnCheckStateChanged_Static(&OnRadioChanged, this, ButtonType)
+			.IsEnabled_Static(&IsRadioEnabled, Change, ButtonType, MergeHelper);
 	};
 
-	TSharedRef<SHorizontalBox> RowContent = SNew(SHorizontalBox)
+	return SNew(SHorizontalBox)
 	+SHorizontalBox::Slot()
 	[
-		SNew(STextBlock)
-		.Text(Item->Label)
-		.ColorAndOpacity(Item->DisplayColor)
-	];
-	
-	if (Item->RemoteDiff.Type != EMergeDiffType::NO_DIFFERENCE)
-	{
-		RowContent->AddSlot().AutoWidth().AttachWidget(CreateCheckbox(EMergeState::Remote, SoftBlue));
-	}
-	else
-	{
-		// use a transparent, disabled checkbox to do the padding for now
-		RowContent->AddSlot().AutoWidth().AttachWidget(CreateSpacer());
-	}
-
-	RowContent->AddSlot().AutoWidth().AttachWidget(CreateCheckbox(EMergeState::Base, SoftYellow));
-
-	SBoxPanel::FSlot& LocalSlot = RowContent->AddSlot().AutoWidth();
-	if (Item->LocalDiff.Type != EMergeDiffType::NO_DIFFERENCE)
-	{
-		RowContent->AddSlot().AutoWidth().AttachWidget(CreateCheckbox(EMergeState::Local, SoftGreen));
-	}
-	else
-	{
-		// use a transparent, disabled checkbox to do the padding for now
-		RowContent->AddSlot().AutoWidth().AttachWidget(CreateSpacer());
-	}
-
-	return SNew(STableRow<TSharedPtr<FString>>, OwnerTable)
+		SNew(STextBlock).Text(Change->Label).ColorAndOpacity(Change->DisplayColor)
+	]
+	+SHorizontalBox::Slot().AutoWidth()
 	[
-		RowContent
+		CreateCheckbox(&Change->RemoteDiff, EMergeState::Remote, SoftBlue)
+	]
+	+SHorizontalBox::Slot().AutoWidth()
+	[
+		CreateCheckbox(nullptr, EMergeState::Base, SoftYellow)
+	]
+	+SHorizontalBox::Slot().AutoWidth()
+	[
+		CreateCheckbox(&Change->LocalDiff, EMergeState::Local, SoftGreen)
 	];
+}
+
+void ChangeTreeEntryChange::OnSelected(SMergeGraphView* GraphView)
+{
+	GraphView->FocusGraph(MergeHelper->GraphName);
+	GraphView->Highlight(*Change);
 }
 
 #undef LOCTEXT_NAMESPACE

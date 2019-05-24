@@ -12,6 +12,7 @@
 #include "Unreal/SMergeAssetPickerView.h"
 #include "BlueprintMergeData.h"
 #include "SMergeGraphView.h"
+#include "SMergeTreeView.h"
 
 BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
@@ -185,37 +186,37 @@ void SBlueprintMergeAssist::Construct(const FArguments& InArgs, const FBlueprint
 
 void SBlueprintMergeAssist::OnToolbarNext()
 {
-	GraphControl->OnToolBarNext();
+	GraphControl->MergeTreeWidget->OnToolBarNext();
 }
 
 void SBlueprintMergeAssist::OnToolbarPrev()
 {
-	GraphControl->OnToolBarPrev();
+	GraphControl->MergeTreeWidget->OnToolBarPrev();
 }
 
 void SBlueprintMergeAssist::OnToolbarNextConflict()
 {
-	GraphControl->OnToolBarNextConflict();
+	GraphControl->MergeTreeWidget->OnToolBarNextConflict();
 }
 
 void SBlueprintMergeAssist::OnToolbarPrevConflict()
 {
-	GraphControl->OnToolBarPrevConflict();
+	GraphControl->MergeTreeWidget->OnToolBarPrevConflict();
 }
 
 void SBlueprintMergeAssist::OnToolbarApplyRemote()
 {
-	GraphControl->OnToolbarApplyRemote();
+	GraphControl->MergeTreeWidget->OnToolbarApplyRemote();
 }
 
 void SBlueprintMergeAssist::OnToolbarApplyLocal()
 {
-	GraphControl->OnToolbarApplyLocal();
+	GraphControl->MergeTreeWidget->OnToolbarApplyLocal();
 }
 
 void SBlueprintMergeAssist::OnToolbarRevert()
 {
-	GraphControl->OnToolbarRevert();
+	GraphControl->MergeTreeWidget->OnToolbarRevert();
 }
 
 void SBlueprintMergeAssist::OnToolbarFinishMerge()
