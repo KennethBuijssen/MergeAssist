@@ -567,7 +567,6 @@ void DiffR_PinRemoved(FMergeDiffResults& Results, UEdGraphPin* OldPin)
 	{
 		Diff.DisplayString = FText::FormatOrdered(
 			LOCTEXT("DDS_PinRemoved", "Removed Pin '{0}' from '{1}'"), OldPin->GetDisplayName(), GetNodeTitle(OldPin->GetOwningNode()));
-		Diff.DisplayString = FText::FromString("Removed Pin: ");
 		Diff.DisplayColor = FLinearColor(0.45f,0.4f,0.4f);
 	}
 

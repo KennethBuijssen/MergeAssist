@@ -383,8 +383,8 @@ bool GraphMergeHelper::ApplyDiff(const FMergeDiffResult& Diff, const bool bCanWr
 	{
 	case EMergeDiffType::NODE_REMOVED:      return ApplyDiff_NODE_REMOVED     (Diff, bCanWrite);
 	case EMergeDiffType::NODE_ADDED:        return ApplyDiff_NODE_ADDED       (Diff, bCanWrite);
-	//case EMergeDiffType::PIN_REMOVED:       return ApplyDiff_PIN_REMOVED      (Diff, bCanWrite);
-	//case EMergeDiffType::PIN_ADDED:         return ApplyDiff_PIN_ADDED        (Diff, bCanWrite);
+	case EMergeDiffType::PIN_REMOVED:       return ApplyDiff_PIN_REMOVED      (Diff, bCanWrite);
+	case EMergeDiffType::PIN_ADDED:         return ApplyDiff_PIN_ADDED        (Diff, bCanWrite);
 	case EMergeDiffType::LINK_REMOVED:      return ApplyDiff_LINK_REMOVED     (Diff, bCanWrite);
 	case EMergeDiffType::LINK_ADDED:        return ApplyDiff_LINK_ADDED       (Diff, bCanWrite);
 	case EMergeDiffType::PIN_DEFAULT_VALUE: return ApplyDiff_PIN_DEFAULT_VALUE(Diff, bCanWrite);
@@ -400,8 +400,8 @@ bool GraphMergeHelper::RevertDiff(const FMergeDiffResult& Diff, const bool bCanW
 	{
 	case EMergeDiffType::NODE_REMOVED:      return RevertDiff_NODE_REMOVED     (Diff, bCanWrite);
 	case EMergeDiffType::NODE_ADDED:        return RevertDiff_NODE_ADDED       (Diff, bCanWrite);
-	//case EMergeDiffType::PIN_REMOVED:       return RevertDiff_PIN_REMOVED      (Diff, bCanWrite);
-	//case EMergeDiffType::PIN_ADDED:         return RevertDiff_PIN_ADDED        (Diff, bCanWrite);
+	case EMergeDiffType::PIN_REMOVED:       return RevertDiff_PIN_REMOVED      (Diff, bCanWrite);
+	case EMergeDiffType::PIN_ADDED:         return RevertDiff_PIN_ADDED        (Diff, bCanWrite);
 	case EMergeDiffType::LINK_REMOVED:      return RevertDiff_LINK_REMOVED     (Diff, bCanWrite);
 	case EMergeDiffType::LINK_ADDED:        return RevertDiff_LINK_ADDED       (Diff, bCanWrite);
 	case EMergeDiffType::PIN_DEFAULT_VALUE: return RevertDiff_PIN_DEFAULT_VALUE(Diff, bCanWrite);
@@ -507,8 +507,7 @@ bool GraphMergeHelper::ApplyDiff_NODE_REMOVED(const FMergeDiffResult& Diff, cons
 }
 
 bool GraphMergeHelper::ApplyDiff_NODE_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
-{
-	
+{	
 	UEdGraphNode* NewNode = nullptr;
 	
 	const bool Ret = CloneToTarget(Diff.NodeNew, true, bCanWrite, &NewNode);
@@ -523,14 +522,47 @@ bool GraphMergeHelper::ApplyDiff_NODE_ADDED(const FMergeDiffResult& Diff, const 
 
 bool GraphMergeHelper::ApplyDiff_PIN_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	// @TODO: Implement
-	return false;
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.PinOld->GetOwningNode());
+	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.PinOld);
+
+	if (!TargetPin) return false;
+
+	if (bCanWrite)
+	{
+		TargetNode->RemovePin(TargetPin);
+		TargetNode->GetGraph()->NotifyGraphChanged();
+	}
+
+	return true;
 }
 
 bool GraphMergeHelper::ApplyDiff_PIN_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	// @TODO: Implement
-	return false;
+	UEdGraphNode* TargetNode = FindNodeInTargetGraph(Diff.PinNew->GetOwningNode());
+
+	if (!TargetNode) return false;
+
+	// Ensure that the pin name is not already used
+	if (TargetNode->FindPin(Diff.PinNew->PinName)) return false;
+
+	if (bCanWrite)
+	{
+		auto Pin = TargetNode->CreatePin(
+			Diff.PinNew->Direction,
+			Diff.PinNew->PinType.PinCategory, 
+			Diff.PinNew->PinType.PinSubCategory, 
+			Diff.PinNew->PinType.PinSubCategoryObject.Get(), 
+			Diff.PinNew->PinName, 
+			UEdGraphNode::FCreatePinParams(Diff.PinNew->PinType));
+
+		// We need to manually notify the graph that is was changed
+		// since CreatePin does not do this internally
+		TargetNode->GetGraph()->NotifyGraphChanged();
+
+		return Pin != nullptr;
+	}
+
+	return true;
 }
 
 bool GraphMergeHelper::ApplyDiff_LINK_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
@@ -663,14 +695,47 @@ bool GraphMergeHelper::RevertDiff_NODE_ADDED(const FMergeDiffResult& Diff, const
 
 bool GraphMergeHelper::RevertDiff_PIN_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	// @TODO: Implement
-	return false;
+	UEdGraphNode* TargetNode = GetBaseNodeInTargetGraph(Diff.PinOld->GetOwningNode());
+
+	if (!TargetNode) return false;
+
+	// Ensure that the pin name is not already used
+	if (TargetNode->FindPin(Diff.PinOld->PinName)) return false;
+
+	if (bCanWrite)
+	{
+		auto Pin = TargetNode->CreatePin(
+			Diff.PinOld->Direction,
+			Diff.PinOld->PinType.PinCategory, 
+			Diff.PinOld->PinType.PinSubCategory, 
+			Diff.PinOld->PinType.PinSubCategoryObject.Get(), 
+			Diff.PinOld->PinName, 
+			UEdGraphNode::FCreatePinParams(Diff.PinOld->PinType));
+
+		// We need to manually notify the graph that is was changed
+		// since CreatePin does not do this internally
+		TargetNode->GetGraph()->NotifyGraphChanged();
+
+		return Pin != nullptr;
+	}
+
+	return true;
 }
 
 bool GraphMergeHelper::RevertDiff_PIN_ADDED(const FMergeDiffResult& Diff, const bool bCanWrite)
 {
-	// @TODO: Implement
-	return false;
+	UEdGraphNode* TargetNode = FindNodeInTargetGraph(Diff.PinNew->GetOwningNode());
+	UEdGraphPin* TargetPin = SafeFindPin(TargetNode, Diff.PinNew);
+
+	if (!TargetPin) return false;
+
+	if (bCanWrite)
+	{
+		TargetNode->RemovePin(TargetPin);
+		TargetNode->GetGraph()->NotifyGraphChanged();
+	}
+
+	return true;
 }
 
 bool GraphMergeHelper::RevertDiff_LINK_REMOVED(const FMergeDiffResult& Diff, const bool bCanWrite)
