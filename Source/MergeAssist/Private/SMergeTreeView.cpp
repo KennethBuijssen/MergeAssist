@@ -2,6 +2,7 @@
 
 #include "SMergeTreeView.h"
 #include "SlateOptMacros.h"
+#include "EditorStyle.h"
 
 BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
@@ -9,9 +10,22 @@ static TSharedRef<ITableRow> ChangeTreeOnGenerateRow(
 	TSharedPtr<IMergeTreeEntry> Item, 
 	const TSharedRef<STableViewBase>& OwnerTable)
 {
+	// We use a lambda to calculate the color when a row is highlighted
+	// this ensures that the color is dynamically updated whenever we set 
+	// the highlight flag
+	auto CalcHighlightColor = [Item]()
+	{
+		return Item->bHighLight ? FColor(0xFF, 0x00, 0x00, 0x60) : FColor(0x00, 0x00, 0x00, 0x00);		
+	};
+
 	return SNew(STableRow<TSharedPtr<FString>>, OwnerTable)
 	[
-		Item->OnGenerateRow()
+		// Add a border around the row, as a way to add highlights
+		SNew(SBorder).BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder")).Padding(0.0f)
+		.BorderBackgroundColor_Lambda(CalcHighlightColor)
+		[
+			Item->OnGenerateRow()
+		]
 	];
 }
 
@@ -34,7 +48,7 @@ static void ChangeTreeOnGetChildren(TSharedPtr<IMergeTreeEntry> Item,
 void SMergeTreeView::Construct(const FArguments& InArgs)
 {
 	Widget = SNew(STreeView<TSharedPtr<IMergeTreeEntry>>)
-		.ItemHeight(24)
+		.ItemHeight(20)
 		.TreeItemsSource(&Data)
 		.SelectionMode(ESelectionMode::Single)
 		.OnGenerateRow_Static(&ChangeTreeOnGenerateRow)
@@ -43,7 +57,11 @@ void SMergeTreeView::Construct(const FArguments& InArgs)
 
 	ChildSlot
 	[
-		Widget.ToSharedRef()
+		// Add a darker background behind the tree view, this helps the text stand out more
+		SNew(SBorder).BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder"))
+		[
+			Widget.ToSharedRef()
+		]		
 	];
 }
 void SMergeTreeView::Add(TSharedPtr<IMergeTreeEntry> TreeEntry)

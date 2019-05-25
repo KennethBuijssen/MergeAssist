@@ -7,9 +7,11 @@
 #include "DeclarativeSyntaxSupport.h"
 
 #include "STreeView.h"
+#include <functional>
 
 struct IMergeTreeEntry
 {
+	IMergeTreeEntry() : bHighLight(false) {}
 	virtual ~IMergeTreeEntry() = default;
 
 	// The actual functions doing the heavy lifting
@@ -19,7 +21,8 @@ struct IMergeTreeEntry
 	virtual bool ApplyRemote() { return false; }
 	virtual bool ApplyLocal()  { return false; }
 	virtual bool Revert()      { return false; }
-	
+
+	bool bHighLight;
 	TArray<TSharedPtr<IMergeTreeEntry>> Children;
 };
 
@@ -34,6 +37,23 @@ public:
 	void Construct(const FArguments& InArgs);
 
 	void Add(TSharedPtr<IMergeTreeEntry> TreeEntry);
+
+	// Set the highlight value 
+	template<typename Predicate>
+	void HighlightByPredicate(Predicate Pred)
+	{
+		std::function<void(TArray<TSharedPtr<IMergeTreeEntry>>&)> Highlight = 
+			[&Highlight, Pred](TArray<TSharedPtr<IMergeTreeEntry>>& Entries)
+		{
+			for (auto Entry : Entries)
+			{
+				Entry->bHighLight = Pred(Entry);
+				Highlight(Entry->Children);
+			}
+		};
+
+		Highlight(Data);
+	}
 
 	void OnToolBarPrev();
 	void OnToolBarNext();

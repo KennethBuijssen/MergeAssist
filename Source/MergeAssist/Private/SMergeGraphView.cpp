@@ -24,7 +24,8 @@ struct ChangeTreeEntryGraph : IMergeTreeEntry
 	ChangeTreeEntryGraph(
 		SMergeGraphView& GraphView, 
 		TSharedPtr<GraphMergeHelper> MergeHelper) 
-		: GraphView(GraphView)
+		: IMergeTreeEntry()
+		, GraphView(GraphView)
 		, MergeHelper(MergeHelper) 
 	{}
 
@@ -41,7 +42,8 @@ struct ChangeTreeEntryChange : IMergeTreeEntry
 		SMergeGraphView& GraphView, 
 		TSharedPtr<GraphMergeHelper> MergeHelper, 
 		TSharedPtr<MergeGraphChange> Change) 
-		: GraphView(GraphView)
+		: IMergeTreeEntry()
+		, GraphView(GraphView)
 		, MergeHelper(MergeHelper)
 		, Change(Change) 
 	{}
@@ -201,20 +203,6 @@ void SMergeGraphView::HighlightClear()
 	if (CurrentTargetGraphEditor) CurrentTargetGraphEditor->ClearSelectionSet();
 }
 
-void SMergeGraphView::NotifyStatus(bool IsSuccessful, const FText ErrorMessage)
-{
-	if (IsSuccessful)
-	{
-		StatusWidget->SetColorAndOpacity(SoftGreen);
-		StatusWidget->SetText(FText::FromString("Success"));
-	}
-	else
-	{
-		StatusWidget->SetColorAndOpacity(SoftRed);
-		StatusWidget->SetText(ErrorMessage);
-	}
-}
-
 void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeData& InData, TSharedPtr<SMergeTreeView> MergeTreeWidget)
 {
 	Data = InData;
@@ -335,8 +323,6 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeD
 		Panel.InitializeDiffPanel();
 	}
 
-	StatusWidget = SNew(STextBlock).Justification(ETextJustify::Right);
-
 	// Focus the first graph in the list by default, 
 	// this is to ensure that all UI elements are initialized
 	FocusGraph(AllGraphNames.Array()[0]);
@@ -349,10 +335,6 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeD
 		+SVerticalBox::Slot()
 		[
 			GraphTab
-		]
-		+SVerticalBox::Slot().AutoHeight()
-		[
-			StatusWidget.ToSharedRef()
 		]
 	];
 
@@ -497,12 +479,14 @@ TSharedRef<SWidget> ChangeTreeEntryChange::OnGenerateRow()
 		if (DiffResult && DiffResult->Type == EMergeDiffType::NO_DIFFERENCE)
 		{
 			return SNew(SCheckBox)
+			.Padding(0.2f)
 			.ForegroundColor(FSlateColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.0f)))
 			.BorderBackgroundColor(FSlateColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.0f)))
 			.IsEnabled(false);
 		}
 
 		return SNew(SCheckBox)
+			.Padding(0.2f)
 			.Type(ESlateCheckBoxType::CheckBox)
 			.ForegroundColor(Color)
 			.IsChecked_Static(&IsRadioChecked, Change, ButtonType)

@@ -65,4 +65,5 @@ private:
 	TSharedPtr<SWidget> AssetPickerControl;
 	TSharedPtr<class SMergeTreeView> MergeTreeWidget;
 	TSharedPtr<class SMergeGraphView> GraphViewWidget;
+	TSharedPtr<class STextBlock> StatusWidget;
 };

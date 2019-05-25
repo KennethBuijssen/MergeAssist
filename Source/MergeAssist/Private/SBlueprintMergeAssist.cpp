@@ -140,18 +140,16 @@ void SBlueprintMergeAssist::Construct(const FArguments& InArgs, const FBlueprint
 	ChildSlot
 	[
 		SNew(SVerticalBox)
-		+ SVerticalBox::Slot() // Toolbar
-		.AutoHeight()
+		+ SVerticalBox::Slot().AutoHeight().Padding(1.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
-			.Padding(.2f)
 			[
 				ToolBarBuilder.MakeWidget()
 			]
 		]
-		+ SVerticalBox::Slot()
+		+ SVerticalBox::Slot().Padding(1.0f)
 		[
 			SNew(SSplitter)
 			.Orientation(Orient_Horizontal)
@@ -165,6 +163,10 @@ void SBlueprintMergeAssist::Construct(const FArguments& InArgs, const FBlueprint
 			[
 				SAssignNew(MainContainer, SBox)
 			]
+		]
+		+SVerticalBox::Slot().AutoHeight()
+		[
+			SAssignNew(StatusWidget, STextBlock).Justification(ETextJustify::Right)
 		]
 	];
 

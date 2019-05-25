@@ -31,8 +31,6 @@ public:
 	void Highlight(MergeGraphChange& Change);
 	void HighlightClear();
 
-	void NotifyStatus(bool IsSuccessful, const FText ErrorMessage);
-
 private:
 	FBlueprintMergeData Data;
 
@@ -45,9 +43,6 @@ private:
 	TMap<UEdGraph*, TSharedPtr<SGraphEditor>> TargetGraphEditorMap;
 	TSharedPtr<SBox> TargetGraphEditorContainer;
 	TSharedPtr<SGraphEditor> CurrentTargetGraphEditor;
-
-	// @TODO: Formalize this
-	TSharedPtr<STextBlock> StatusWidget;
 
 	TArray<FDiffPanel> DiffPanels;
 };
