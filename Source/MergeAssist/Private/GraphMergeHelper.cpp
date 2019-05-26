@@ -573,12 +573,13 @@ bool GraphMergeHelper::ApplyDiff_LINK_REMOVED(const FMergeDiffResult& Diff, cons
 	if (!TargetPin) return false;
 
 	UEdGraphPin** FoundLinkTarget = TargetPin->LinkedTo.FindByPredicate(
-		[Diff](UEdGraphPin* Pin)
+		[Diff, this](UEdGraphPin* Pin)
 	{
 		return Pin 
-			&& Pin->PinName   == Diff.LinkTargetOld->PinName
-			&& Pin->Direction == Diff.LinkTargetOld->Direction
-			&& Pin->PinType   == Diff.LinkTargetOld->PinType;
+			&& Pin->PinName         == Diff.LinkTargetOld->PinName
+			&& Pin->Direction       == Diff.LinkTargetOld->Direction
+			&& Pin->PinType         == Diff.LinkTargetOld->PinType
+			&& Pin->GetOwningNode() == FindNodeInTargetGraph(Diff.LinkTargetOld->GetOwningNode());
 	});
 
 	// Check if we could find the link target in the target graph
@@ -767,12 +768,13 @@ bool GraphMergeHelper::RevertDiff_LINK_ADDED(const FMergeDiffResult& Diff, const
 	if (!TargetPin) return false;
 
 	UEdGraphPin** FoundLinkTarget = TargetPin->LinkedTo.FindByPredicate(
-		[Diff](UEdGraphPin* Pin)
+		[Diff, this](UEdGraphPin* Pin)
 	{
 		return Pin 
-			&& Pin->PinName   == Diff.LinkTargetNew->PinName
-			&& Pin->Direction == Diff.LinkTargetNew->Direction
-			&& Pin->PinType   == Diff.LinkTargetNew->PinType;
+			&& Pin->PinName         == Diff.LinkTargetNew->PinName
+			&& Pin->Direction       == Diff.LinkTargetNew->Direction
+			&& Pin->PinType         == Diff.LinkTargetNew->PinType
+			&& Pin->GetOwningNode() == FindNodeInTargetGraph(Diff.LinkTargetNew->GetOwningNode());
 	});
 
 	// Check if we could find the link target in the target graph
