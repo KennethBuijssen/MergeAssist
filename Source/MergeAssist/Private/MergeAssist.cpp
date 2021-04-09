@@ -3,7 +3,7 @@
 #include "SBlueprintMergeAssist.h"
 #include "BlueprintMergeData.h"
 
-#include "SDockTab.h"
+#include "Widgets/Docking/SDockTab.h"
 
 #define LOCTEXT_NAMESPACE "FMergeAssistModule"
 
@@ -52,7 +52,7 @@ void FMergeAssistModule::StartupModule()
 	TabSpawnerEntry.SetTooltipText(LOCTEXT("TooltipText", "Open the Merge assist tool"));
 
 	// @TODO: Stop the tab from opening by default
-	FGlobalTabmanager::Get()->InvokeTab(MergeAssistTabId);
+	FGlobalTabmanager::Get()->TryInvokeTab(MergeAssistTabId);
 }
 
 void FMergeAssistModule::ShutdownModule()
