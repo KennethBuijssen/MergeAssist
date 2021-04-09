@@ -2,14 +2,15 @@
 
 #include "SMergeGraphView.h"
 #include "SlateOptMacros.h"
-#include "SSplitter.h"
-#include "SDockTab.h"
+#include "Widgets/Layout/SSplitter.h"
+#include "Widgets/Docking/SDockTab.h"
 #include "EdGraph/EdGraph.h"
+
 #include "SBlueprintDiff.h"
 #include "Engine/Blueprint.h"
-#include "SCheckBox.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "BlueprintEditor.h"
-#include "BlueprintEditorUtils.h"
+#include "Kismet2/BlueprintEditorUtils.h"
 #include "GraphMergeHelper.h"
 #include "SMergeTreeView.h"
 
@@ -75,6 +76,21 @@ struct FBlueprintRevPair
 {
 	const UBlueprint* Blueprint;
 	const FRevisionInfo& RevData;
+};
+
+struct FMatchFName
+{
+	FMatchFName(FName InName)
+		: Name(InName)
+	{
+	}
+
+	bool operator() (const UObject* Object)
+	{
+		return Object->GetFName() == Name;
+	}
+
+	FName const Name;
 };
 
 static UEdGraph* FindGraphByName(UBlueprint const& FromBlueprint, const FName& GraphName)
@@ -319,7 +335,7 @@ void SMergeGraphView::Construct(const FArguments& InArgs, const FBlueprintMergeD
 	for (auto& Panel: DiffPanels)
 	{
 		// @TODO: Move generating the blueprint panel to the Details (blueprint) view once support for this has been added
-		Panel.GenerateMyBlueprintPanel();
+		Panel.GenerateMyBlueprintWidget();
 		Panel.InitializeDiffPanel();
 	}
 
@@ -403,7 +419,7 @@ TSharedRef<SDockTab> SMergeGraphView::CreateMergeGraphTab(const FSpawnTabArgs& A
 	{
 		PanelContainer->AddSlot()
 		[
-			SAssignNew(Panel.GraphEditorBorder, SBox)
+			SAssignNew(Panel.GraphEditorBox, SBox)
 			.VAlign(VAlign_Fill)
 			[
 				SBlueprintDiff::DefaultEmptyPanel()

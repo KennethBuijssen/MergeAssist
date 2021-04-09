@@ -345,13 +345,13 @@ UEdGraphNode* GraphMergeHelper::FindNodeInTargetGraph(UEdGraphNode* Node)
 	}
 	else if (Node->GetGraph() == LocalGraph)
 	{
-		auto** FoundNode = LocalToBaseNodeMap.Find(Node);
-		if (FoundNode) BaseNode = *FoundNode;
+		auto** FoundNode1 = LocalToBaseNodeMap.Find(Node);
+		if (FoundNode1) BaseNode = *FoundNode1;
 	}
 	else if (Node->GetGraph() == RemoteGraph)
 	{
-		auto** FoundNode = RemoteToBaseNodeMap.Find(Node);
-		if (FoundNode) BaseNode = *FoundNode;
+		auto** FoundNode2 = RemoteToBaseNodeMap.Find(Node);
+		if (FoundNode2) BaseNode = *FoundNode2;
 	}
 
 	// If we don't know what node it would be in the base graph, we can't 
